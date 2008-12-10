@@ -25,6 +25,3 @@ EXPORTS
 	hexchr
 	hextol
 	isstrhex
-	SymGetSymbolByAddress
-	SymGetSymbolByName
-	

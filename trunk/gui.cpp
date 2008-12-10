@@ -377,8 +377,8 @@ This function can be called at any IRQL
 		RectDest.bottom -= (ActiveFont.CharHeight * nLines + _y) - Height;
 	}
 
-	KdPrint(("Scrolling lines: nLines %d, _y %d from %d %d %d %d to %d %d\n",
-		nLines, _y, PointFrom.x, PointFrom.y, PointFrom.x+(Width-SpareX*2), PointFrom.y+_y-SpareY));
+//	KdPrint(("Scrolling lines: nLines %d, _y %d from %d %d %d %d to %d %d\n",
+//		nLines, _y, PointFrom.x, PointFrom.y, PointFrom.x+(Width-SpareX*2), PointFrom.y+_y-SpareY));
 
 	EngCopyBits (
 		pGDISurf,
@@ -394,8 +394,8 @@ This function can be called at any IRQL
 	RectDest.right = Width - SpareX;
 	RectDest.bottom = _y; // _y already contains SpareY
 
-	KdPrint(("Scrolling lines: erasing from %d %d %d %d\n",
-		RectDest.left, RectDest.top, RectDest.right, RectDest.bottom));
+//	KdPrint(("Scrolling lines: erasing from %d %d %d %d\n",
+//		RectDest.left, RectDest.top, RectDest.right, RectDest.bottom));
 
 	EngEraseSurface (pGDISurf, &RectDest, RGB(0xFF,0xFF,0xFF));
 

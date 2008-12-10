@@ -11,16 +11,16 @@ FindBaseAndSize(
 	);
 
 ULONG
-SymGetSymbolByAddress(
-	PVOID LoadedSymbols,
-	PVOID ImageBase,
+SymGlobGetSymbolByAddress(
 	PVOID Address,
 	char* Symbol,
 	ULONG *SymLen
 	);
 
-extern PVOID pNtSymbols;
-extern PVOID pNtBase;
+BOOL MmIsAddressValid (PVOID);
+
+//extern PVOID pNtSymbols;
+//extern PVOID pNtBase;
 
 VOID _cdecl DbgPrint (char*,...);
 #define KdPrint(X) DbgPrint X
@@ -1333,16 +1333,48 @@ VOID _stdcall MakeMnemonic(PCHAR OutBuffer, PDisCommand Command, PMnemonicOption
 
 						sym[0] = 'W'; sym[1] = 0;
 						len = sizeof(sym);
-						if (SymGetSymbolByAddress (pNtSymbols, pNtBase, (PVOID)pValue, sym, &len) == 0)
+						if (SymGlobGetSymbolByAddress ((PVOID)pValue, sym, &len) == 0)
 						{
+							char *excl;
+
 							KdPrint(("got sym for dsp: %s\n", sym));
 							strcat (OutBuffer, sym);
 
-							if (_stricmp(sym, "_imp_") == 0)
+							excl = strchr (sym, '!');
+							if (excl)
+								excl ++;
+							else
+								excl = sym;
+
+							if (_stricmp(excl, "_imp_") == 0)
 							{
+								BOOL PrintHex = 1;
+
+								if (MmIsAddressValid((PVOID)pValue))
+								{
+									PVOID ptr = *(PVOID*)pValue;
+
+									len = sizeof(sym);
+									if (SymGlobGetSymbolByAddress (ptr, sym, &len) == 0)
+									{
+										KdPrint(("Found imp symbol for %X [%X] '%s'\n", pValue, ptr, sym));
+	
+										strcat (OutBuffer, sym);
+
+										PrintHex = 0;
+									}
+									else
+									{
+										KdPrint(("Could not find imp symbol for %X [%X]\n", pValue, ptr));
+									}
+								}
+
 								// some import
-								ToHex (pValue, OffsetSize, Tmp);
-								strcat(OutBuffer, Tmp);
+								if (PrintHex)
+								{
+									ToHex (pValue, OffsetSize, Tmp);
+									strcat(OutBuffer, Tmp);
+								}
 							}
 
 							strcat (OutBuffer, "]");
@@ -1364,7 +1396,7 @@ VOID _stdcall MakeMnemonic(PCHAR OutBuffer, PDisCommand Command, PMnemonicOption
 
 						sym[0] = 'Z'; sym[1] = 0;
 						len = sizeof(sym);
-						if (SymGetSymbolByAddress (pNtSymbols, pNtBase, (PVOID)pValue, sym, &len) == 0)
+						if (SymGlobGetSymbolByAddress ((PVOID)pValue, sym, &len) == 0)
 						{
 							KdPrint(("got sym for imm, fword: %s\n", sym));
 							strcpy (Tmp, sym);
@@ -1396,7 +1428,7 @@ VOID _stdcall MakeMnemonic(PCHAR OutBuffer, PDisCommand Command, PMnemonicOption
 
 								sym[0] = 'Y'; sym[1] = 0;
 								len = sizeof(sym);
-								if (SymGetSymbolByAddress (pNtSymbols, pNtBase, (PVOID)Val, sym, &len) == 0)
+								if (SymGlobGetSymbolByAddress ((PVOID)Val, sym, &len) == 0)
 								{
 									KdPrint(("got sym for imm, jump: %s\n", sym));
 									strcpy (Tmp, sym);
@@ -1415,7 +1447,7 @@ VOID _stdcall MakeMnemonic(PCHAR OutBuffer, PDisCommand Command, PMnemonicOption
 							sym[0] = 'X'; sym[1] = 0;
 							len = sizeof(sym);
 							if (Bits == 32 &&
-								SymGetSymbolByAddress (pNtSymbols, pNtBase, (PVOID)pValue, sym, &len) == 0)
+								SymGlobGetSymbolByAddress ((PVOID)pValue, sym, &len) == 0)
 							{
 								KdPrint(("got sym for imm32: %s\n", sym));
 								strcpy (Tmp, sym);

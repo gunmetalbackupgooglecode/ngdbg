@@ -225,10 +225,6 @@
 			>
 		</File>
 		<File
-			RelativePath="..\symbols.cpp"
-			>
-		</File>
-		<File
 			RelativePath="vcrt.cpp"
 			>
 			<FileConfiguration
