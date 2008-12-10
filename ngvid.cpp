@@ -90,7 +90,7 @@ BOOLEAN
     IN PKEYBOARD_SCAN_STATE  ScanState				// esp+1c
     )
 {
-	KdPrint(("IsrHookRoutine: Byte %X\n", *Byte));
+	//KdPrint(("IsrHookRoutine: Byte %X\n", *Byte));
 	*ContinueProcessing = TRUE;
 
 	ProcessScanCode (*Byte);
@@ -648,6 +648,13 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING )
 {
 	DriverObject->DriverUnload = DriverUnload;
 	KdPrint(("[~] DriverEntry()\n"));
+
+	if (KeNumberProcessors > 1)
+	{
+		KdPrint(("Your number of processors : %d\n", KeNumberProcessors));
+		KdPrint(("Only UP machines supported\n"));
+		return STATUS_NOT_SUPPORTED;
+	}
 
 	KdPrint (("First hello from nt\n"));
 

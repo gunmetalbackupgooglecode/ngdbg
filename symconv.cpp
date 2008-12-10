@@ -53,17 +53,30 @@ BOOL _stdcall Callback(
 	return TRUE;
 }
 
-ULONG QueryExeTimeStamp (char *exe)
+ULONG QueryExeTimeStamp (char *exe, BOOLEAN InSystem)
 {
-	char fullname[512];
+	char fullname[512] = "";
 	ULONG CapturedTimeStamp = 0;
 
-	GetSystemDirectory (fullname, sizeof(fullname));
-	strcat (fullname, "\\");
+	if (InSystem)
+	{
+		GetSystemDirectory (fullname, sizeof(fullname));
+		strcat (fullname, "\\");
+	}
 	strcat (fullname, exe);
 
 	HANDLE hexe = CreateFile (fullname, GENERIC_READ, FILE_SHARE_READ|FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
-	if (hexe != INVALID_HANDLE_VALUE)
+	if (hexe == INVALID_HANDLE_VALUE)
+	{
+		printf("not found in spcified path, searching system\n");
+		char *relname = strrchr (exe, '\\');
+		if (relname)
+			relname++;
+		else
+			relname = exe;
+		return QueryExeTimeStamp (relname, TRUE);
+	}
+	else
 	{
 		HANDLE hMapping = CreateFileMapping (hexe, 0, PAGE_READONLY, 0, 0, 0);
 		if (hMapping)
@@ -100,7 +113,7 @@ int main(int argc, char **argv)
 
 	hFile = CreateFile (argv[2], GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
 
-	ULONG time = QueryExeTimeStamp(argv[1]);
+	ULONG time = QueryExeTimeStamp(argv[1], FALSE);
 	WriteFile (hFile, &time, sizeof(time), &wr, 0);
 
 	printf("Initializing\n");

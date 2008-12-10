@@ -34,7 +34,7 @@ extern BOOLEAN ExceptionShouldBeDispatched;
 extern BOOLEAN StopProcessingCommands;
 
 extern "C" extern PVOID pNtBase;
-extern "C" extern PVOID pNtSymbols;
+//extern "C" extern PVOID pNtSymbols;
 
 struct _KPRCB
 {
@@ -104,7 +104,7 @@ Environment
 			char Symbol[32];
 			ULONG symlen = sizeof(Symbol);
 
-			if (SymGetSymbolByAddress (pNtSymbols, pNtBase, ptr, Symbol, &symlen) == 0)
+			if (SymGlobGetSymbolByAddress (ptr, Symbol, &symlen) == 0)
 			{
 				GuiPrintf("%s:\n", Symbol);
 			}
@@ -172,12 +172,9 @@ Environment
 {
 	NTSTATUS Status;
 
-	if (pNtSymbols)
-	{
-		Status = SymGetSymbolByName (pNtSymbols, pNtBase, a, (ULONG*)pSym);
-		if (NT_SUCCESS(Status))
-			return TRUE;
-	}
+	Status = SymGlobGetSymbolByName (a, (ULONG*)pSym);
+	if (NT_SUCCESS(Status))
+		return TRUE;
 
 	if (isstrhex(a))
 	{
@@ -282,7 +279,7 @@ Return Value
 				char Symbol[32];
 				ULONG symlen = sizeof(Symbol);
 
-				if (SymGetSymbolByAddress (pNtSymbols, pNtBase, ptr, Symbol, &symlen) == 0)
+				if (SymGlobGetSymbolByAddress (ptr, Symbol, &symlen) == 0)
 				{
 					GuiPrintf("%s:\n%08X : %08X %08X %08X %08X\n",
 						Symbol, ptr, ptr[0], ptr[1], ptr[2], ptr[3]);

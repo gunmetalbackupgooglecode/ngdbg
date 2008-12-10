@@ -57,6 +57,7 @@ Return Value
 	);
 
 #include "gui.h"	
+#include "symbols.h"
 
 //
 // Declarations
@@ -152,7 +153,8 @@ typedef struct tagBITMAPFILEHEADER {
 //
 
 extern "C" extern PVOID pNtBase;
-extern "C" extern PVOID pNtSymbols;
+//extern "C" extern PVOID pNtSymbols;
+//extern "C" extern PMOD_SYM pNtSymbols;
 
 //
 // Base load address of nt kernel and
@@ -160,9 +162,10 @@ extern "C" extern PVOID pNtSymbols;
 //
 
 PVOID pNtBase;
-PVOID pNtSymbols;		// pointer to mapped sym file
-ULONG_PTR iNtSymbols;	// ID of mapped sym file, it will be passed in EngUnmapFile
-PMDL SymMdl;			// MDL for symbols
+//PVOID pNtSymbols;		// pointer to mapped sym file
+//ULONG_PTR iNtSymbols;	// ID of mapped sym file, it will be passed in EngUnmapFile
+//PMDL SymMdl;			// MDL for symbols
+//PMOD_SYM pNtSymbols;
 
 //
 // Some declarations..
@@ -395,6 +398,7 @@ Environment
 	// Load NT symbols
 	//
 
+	/*
 	PIMAGE_DOS_HEADER NtDos = (PIMAGE_DOS_HEADER) pNtBase;
 	PIMAGE_NT_HEADERS NtHeaders = (PIMAGE_NT_HEADERS)((PUCHAR)NtDos + NtDos->e_lfanew);
 
@@ -464,6 +468,15 @@ Environment
 
 		ZwClose (hKey);
 	}
+	*/
+
+	SymInitialize();
+
+	Status = SymLoadSymbolFile (L"nt", pNtBase);
+	KdPrint(("nt symbols loaded with status %X\n", Status));
+
+	Status = SymLoadSymbolFile (L"hal.dll", NULL);
+	KdPrint(("hal.dll symbols loaded with status %X\n", Status));
 
 	//
 	// Initialization completed.
@@ -597,27 +610,30 @@ Environment
 --*/
 
 {
-	if (pNtSymbols)
-	{
-		UnlockMem (SymMdl);
-		EngUnmapFile (iNtSymbols);
-	}
+	KdPrint(( __FUNCTION__ " : unloading symbol tables\n"));
+	SymFreeSymbolTables ();
 
+	KdPrint(( __FUNCTION__ " : unlocking MDLs for surfaces\n"));
 	UnlockMem (SurfMdl);
 	UnlockMem (BackupMdl);
 //	UnlockMem (FillMdl);
 
+	KdPrint(( __FUNCTION__ " : unlocking surfaces\n"));
 //	EngUnlockSurface (pFillSurface);
 	EngUnlockSurface (pBackupSurface);
 	EngUnlockSurface (pGDISurf);
 
+	KdPrint(( __FUNCTION__ " : deleting surfaces\n"));
 //	EngDeleteSurface ((HSURF)hFillBitmap);
 	EngDeleteSurface ((HSURF)hBackupBitmap);
 	EngDeleteSurface ((HSURF)hBitmap);
 
 //	EngUnmapFile (idMappedBitmap);
 
+	KdPrint(( __FUNCTION__ " : unloading font\n"));
 	GuiUnloadFont ();
+
+	KdPrint(( __FUNCTION__ " : completed\n"));
 }
 
 UCHAR KbdGetKeyPolled();
@@ -909,7 +925,7 @@ Environment
 			AsciiCode[1] = 0;
 			GuiTextOut ((PCHAR)AsciiCode);
 
-			KdPrint(("Endl, got string '%s'\n", command));
+			//KdPrint(("Endl, got string '%s'\n", command));
 			ProcessCommand (command);
 
 			if (StopProcessingCommands)
