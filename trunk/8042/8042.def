@@ -1,0 +1,26 @@
+EXPORTS
+
+	;
+	; export all
+	;
+
+	; 8042 functions
+	I8xDrainOutputBuffer
+	I8xGetBytePolled
+	I8xPutBytePolled
+	I8xGetByteAsynchronous
+	KeybdSetLedIndicators
+	
+	; Interrupts
+	GetVector
+	GetAPICValue
+	GetIOAPICIntVector
+	IoHookInterrupt
+	
+	; ISR
+	InterruptService
+	KeyboardISR
+	
+	; Entry & unload
+	DriverEntry
+	DriverUnload
