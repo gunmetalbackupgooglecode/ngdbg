@@ -293,6 +293,10 @@
 			>
 		</File>
 		<File
+			RelativePath=".\ngdbg.cpp"
+			>
+		</File>
+		<File
 			RelativePath="ngvid.cpp"
 			>
 			<FileConfiguration

@@ -3,10 +3,9 @@
 #define NTSTRSAFE_LIB_IMPL
 #include <ntstrsafe.h>
 
-void DriverEntry (void*, void*)
+int DriverEntry (void*, void*)
 {
-	__asm int 3
-	return;
+	return (int) 0xc0000001;
 }
 
 #define ishex(c) ( ((c) >= '0' && (c) <= '9') || ((c) >= 'a' && (c) <= 'f') || ((c) >= 'A' && (c) <= 'F') )

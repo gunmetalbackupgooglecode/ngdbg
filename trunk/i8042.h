@@ -52,6 +52,7 @@
 #define I8042_WRITE_TO_AUX_DEVICE	0xD4		// Write to auxiliary device
 #define I8042_DISABLE_A20_CONTROL	0xDD		// Enable A20 line control
 #define I8042_ENABLE_A20_CONTROL	0xDF		// Disable A20 line contol
+#define I8042_RESET					0xFE
 
 //
 // 8042 controller command byte (read/write by commands 20h/60h)
