@@ -908,15 +908,15 @@ Environment
 		AsciiCode[0] = KeybdScanCodeToAsciiCode (Byte);
 
 		if (Byte == 0x0E)
-		{
-			// don't save this char
-			GuiTextOut ("\b");
-			DisplayBuffer();
-			AsciiCode[0] = 0;
+		{	
 			if (iPos != 0)
 			{
 				iPos --;
+				GuiTextOut ("\b");
+				DisplayBuffer();
 			}
+			// don't save this char
+			AsciiCode[0] = 0;
 		}
 
 		if (AsciiCode[0] == 10)

@@ -239,8 +239,7 @@ void* __base()
 }
 
 // Entry stub
-void DriverEntry()
+int DriverEntry(int,int)
 {
-	__asm int 3
-	return ;
+	return (int)0xc0000001;
 }

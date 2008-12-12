@@ -14,6 +14,8 @@
 #include "ldasm.h"
 #include "winnt.h"
 
+
+
 PVOID
 SetVector(
   IN UCHAR Interrupt,
@@ -713,6 +715,8 @@ Environment
 	return Dispatch.Status;
 }
 
+PKTRAP_FRAME TrapFrame;
+
 //
 // This routine replaces general KiDebugRoutine
 //
@@ -772,6 +776,8 @@ Return Value:
 //	KdPrint(("DbgTrap! (TRAP %X EXC %X REC %X CTX %X PREV %X CHANCE %X\n",
 //		TrapFrame, ExceptionFrame, ExceptionRecord, ContextRecord, PreviousMode, SecondChance
 //		));
+
+	::TrapFrame = TrapFrame;
 
 	if (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION)
 	{

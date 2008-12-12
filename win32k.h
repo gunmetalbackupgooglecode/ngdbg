@@ -63,14 +63,13 @@ Return Value
 
 
 struct _SURFOBJ;
-_SURFOBJ *pPrimarySurf;
-PVOID pDrvCopyBits;
+extern _SURFOBJ *pPrimarySurf;
+extern PVOID pDrvCopyBits;
+extern KEVENT SynchEvent;
 
 #if 0
 PVOID* pTblDrvCopyBits;
 #endif
-
-KEVENT SynchEvent;
 
 typedef struct  _DRVFN  /* drvfn */
 {
@@ -100,34 +99,6 @@ typedef struct SHARED_DISP_DATA
 
 extern PVOID W32BaseAddress;
 
-PVOID *GetMem()
-{
-	return ((PVOID*)&((IMAGE_DOS_HEADER*)W32BaseAddress)->e_res2);
-}
-
-PSHARED_DISP_DATA GetSharedData()
-{
-	PSHARED_DISP_DATA* pData = (PSHARED_DISP_DATA*)GetMem();
-
-	if (!*pData)
-	{
-		KdPrint(("Shared data not allocated, creating\n"));
-
-		*pData = (PSHARED_DISP_DATA) ExAllocatePool (NonPagedPool, sizeof(SHARED_DISP_DATA));
-
-		if (!*pData)
-		{
-			KdPrint (("ExAllocatePool failed\n"));
-			return NULL;
-		}
-
-		memset (*pData, 0, sizeof(SHARED_DISP_DATA));
-
-		(*pData)->Signature = SHARED_SIGNATURE;
-	}
-
-	return *pData;
-}
 
 
 typedef struct _SURFOBJ
@@ -148,6 +119,9 @@ typedef struct _SURFOBJ
 } SURFOBJ;
 #define STYPE_DEVICE    1L
 #define STYPE_DEVBITMAP 3L
+
+
+PSHARED_DISP_DATA GetSharedData();
 
 
 #endif

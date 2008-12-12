@@ -913,9 +913,12 @@ I8042HookKeyboard(
 // Driver entry point
 NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING RegistryPath)
 {
-	DriverObject->DriverUnload = DriverUnload;
 	KdPrint(("[~] DriverEntry()\n"));
 
+	return STATUS_UNSUCCESSFUL;
+
+	/*
+	DriverObject->DriverUnload = DriverUnload;
 #if HOOK_ISR
 	OldKbd = GetIOAPICIntVector (1);
 	KdPrint(("KBD %X\n", OldKbd));
@@ -932,4 +935,5 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING Registry
 
 	KdPrint(("[+] Driver initialization successful\n"));
 	return STATUS_SUCCESS;
+	*/
 }

@@ -55,6 +55,21 @@ SymGlobGetSymbolByAddress(
 	IN OUT ULONG *SymLen
 	);
 
+NTSTATUS
+SymGlobGetNearestSymbolByAddress(
+	IN PVOID Address,
+	OUT PCHAR Symbol,
+	IN OUT ULONG *SymLen,
+	OUT ULONG *Distance
+	);
+
+NTSTATUS
+SymWrGetNearestSymbolByAddress(
+	IN PVOID Address,
+	OUT PCHAR Symbol,
+	IN OUT ULONG *SymLen
+	);
+
 }
 
 #endif

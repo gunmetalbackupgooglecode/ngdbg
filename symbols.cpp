@@ -342,6 +342,15 @@ SymWrGetNearestSymbolByAddress(
 	Status = SymGlobGetNearestSymbolByAddress (Address, LocalSymbol, &LocalLen, &Dist);
 	if (NT_SUCCESS(Status))
 	{
+		if (Dist == 0)
+		{
+			if (*SymLen < LocalLen)
+				return STATUS_BUFFER_OVERFLOW;
+			strncpy (Symbol, LocalSymbol, LocalLen);
+			Symbol[LocalLen] = 0;
+			return STATUS_SUCCESS;
+		}
+
 		RtlStringCchPrintfA (aDist, sizeof(aDist)-1, "+%X", Dist);
 
 		if (*SymLen < (strlen(LocalSymbol)+strlen(aDist)+1))

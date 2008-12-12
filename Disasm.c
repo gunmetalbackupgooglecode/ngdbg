@@ -17,6 +17,15 @@ SymGlobGetSymbolByAddress(
 	ULONG *SymLen
 	);
 
+ULONG
+SymWrGetNearestSymbolByAddress(
+	PVOID Address,
+	char* Symbol,
+	ULONG *SymLen
+	);
+
+#define SymGlobGetSymbolByAddress SymWrGetNearestSymbolByAddress
+
 BOOL MmIsAddressValid (PVOID);
 
 //extern PVOID pNtSymbols;

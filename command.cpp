@@ -103,10 +103,14 @@ Environment
 
 			char Symbol[32];
 			ULONG symlen = sizeof(Symbol);
+			ULONG disp = 0;
 
-			if (SymGlobGetSymbolByAddress (ptr, Symbol, &symlen) == 0)
+			if (SymGlobGetNearestSymbolByAddress (ptr, Symbol, &symlen, &disp) == 0)
 			{
-				GuiPrintf("%s:\n", Symbol);
+				if (disp)
+					GuiPrintf("%s + 0x%x\n", Symbol, disp);
+				else
+					GuiPrintf("%s\n", Symbol);
 			}
 
 			ULONG len = InstrDecode (ptr, &instr, FALSE);
@@ -185,6 +189,60 @@ Environment
 	return FALSE;
 }
 
+#include "i8042.h"
+
+__declspec(noreturn)
+VOID
+RebootMachine(
+	)
+
+/*++
+
+Routine Description
+
+	This routine performs reset of the processor by signaling #RESET line
+
+Arguments
+	
+	None
+
+Return Value
+
+	This function does not return
+
+--*/
+
+{
+	do
+	{
+		I8xPutBytePolled (CommandPort, ControllerDevice, FALSE, (UCHAR) I8042_RESET);
+	}
+	while (TRUE);
+}
+
+extern PKTRAP_FRAME TrapFrame;
+
+VOID WriteRegister (char *regname, ULONG Value)
+{
+	     if (!_stricmp (regname, "eax")) TrapFrame->Eax = Value;
+	else if (!_stricmp (regname, "ecx")) TrapFrame->Ecx = Value;
+	else if (!_stricmp (regname, "edx")) TrapFrame->Edx = Value;
+	else if (!_stricmp (regname, "ebx")) TrapFrame->Ebx = Value;
+	else if (!_stricmp (regname, "esi")) TrapFrame->Esi = Value;
+	else if (!_stricmp (regname, "edi")) TrapFrame->Edi = Value;
+	else if (!_stricmp (regname, "ebp")) TrapFrame->Ebp = Value;
+	else if (!_stricmp (regname, "eip")) TrapFrame->Eip = Value;
+	else if (!_stricmp (regname, "efl")) TrapFrame->EFlags = Value;
+	else if (!_stricmp (regname, "cs")) TrapFrame->SegCs = Value;
+	else if (!_stricmp (regname, "ds")) TrapFrame->SegDs = Value;
+	else if (!_stricmp (regname, "es")) TrapFrame->SegEs = Value;
+	else if (!_stricmp (regname, "fs")) TrapFrame->SegDs = Value;
+	else if (!_stricmp (regname, "gs")) TrapFrame->SegGs = Value;
+	else
+	{
+		GuiPrintf("Invalid reg name %s\n", regname);
+	}
+}
 
 VOID
 ProcessCommand(
@@ -247,9 +305,112 @@ Return Value
 		ExceptionShouldBeDispatched = TRUE;
 		StopProcessingCommands = TRUE;
 	}
+	else if (!_stricmp (cmd, "r"))
+	{
+		if (MmIsAddressValid(TrapFrame))
+		{
+			if (nItems == 3)
+			{
+				PVOID Address;
+
+				if(!Sym(output[2], &Address))
+				{
+					GuiPrintf("Could not find symbol %s\n", output[2]);
+				}
+				else
+				{
+					WriteRegister (output[1], (ULONG) Address);
+				}
+			}
+			else
+			{
+				GuiPrintf("%d args not supported for r\n", nItems-1);
+			}
+		}
+		else
+		{
+			GuiPrintf("TrapFrame %X is not valid\n", TrapFrame);
+		}
+	}
+	else if (!_stricmp (cmd, "trap"))
+	{
+		if (MmIsAddressValid(TrapFrame))
+		{
+			GuiPrintf(
+				"Trap frame at %X\n"
+				"DbgArgMark %08X     DbgEbp %08X        DbgEip %08X\n"
+				"Dr0        %08X     Dr1    %08X        Dr2    %08X\n"
+				"Dr3        %08X     Dr6    %08X        Dr7    %08X\n"
+				"SegGs      %08X     SegEs  %08X        SegDs  %08X\n"
+				"Edx        %08X     Ecx    %08X        Eax    %08X\n"
+				"PrevMode   %08X    ExcList %08X        SegFs  %08X\n"
+				"Edi        %08X     Esi    %08X        Ebx    %08X\n"
+				"Ebp        %08X    ErrCode %08X        Eip    %08X\n"
+				"SegCs           %08X       EFlags          %08X\n"
+				"HardwareEsp     %08X       HardwareSegSs   %08X\n"
+				,
+				TrapFrame, TrapFrame->DbgArgMark, TrapFrame->DbgEbp,
+				TrapFrame->DbgEip, TrapFrame->Dr0, TrapFrame->Dr1,
+				TrapFrame->Dr2, TrapFrame->Dr3, TrapFrame->Dr6, TrapFrame->Dr7,
+				TrapFrame->SegGs, TrapFrame->SegEs, TrapFrame->SegDs,
+				TrapFrame->Edx, TrapFrame->Ecx, TrapFrame->Eax,
+				TrapFrame->PreviousPreviousMode, TrapFrame->ExceptionList, TrapFrame->SegFs,
+				TrapFrame->Edi, TrapFrame->Esi, TrapFrame->Ebx,
+				TrapFrame->Ebp, TrapFrame->ErrCode, TrapFrame->Eip,
+				TrapFrame->SegCs, TrapFrame->EFlags,
+				TrapFrame->HardwareEsp, TrapFrame->HardwareSegSs
+			);
+			
+		}
+		else
+		{
+			GuiPrintf("TrapFrame %X is not valid\n", TrapFrame);
+		}
+	}
+	else if (!_stricmp (cmd, "bugcheck"))
+	{
+		ULONG Code = 0xE2, Par1=0, Par2=0, Par3=0, Par4=0;
+
+		if (nItems > 1)
+			Code = hextol (output[1]);
+		
+		if (nItems > 2)
+			Par1 = hextol (output[2]);
+
+		if (nItems > 3)
+			Par2 = hextol (output[3]);
+
+		if (nItems > 4)
+			Par3 = hextol (output[4]);
+
+		if (nItems > 5)
+			Par4 = hextol (output[5]);
+
+		KeBugCheckEx (Code, Par1, Par2, Par3, Par4);
+	}
 	else if (!_stricmp (cmd, "g"))
 	{
 		StopProcessingCommands = TRUE;
+	}
+	else if (!_stricmp (cmd, "?"))
+	{
+		PVOID Address;
+
+		if (nItems < 2)
+		{
+			GuiTextOut("This command requires an argument\n");
+		}
+		else
+		{
+			if (!Sym(output[1], &Address))
+			{
+				GuiPrintf("Could not find symbol %s\n", output[1]);
+			}
+			else
+			{
+				GuiPrintf("%s = %x\n", output[1], Address);
+			}
+		}
 	}
 	else if (!_stricmp (cmd, "dd"))
 	{
@@ -278,17 +439,18 @@ Return Value
 			{
 				char Symbol[32];
 				ULONG symlen = sizeof(Symbol);
+				ULONG disp = 0;
 
-				if (SymGlobGetSymbolByAddress (ptr, Symbol, &symlen) == 0)
+				if (SymGlobGetNearestSymbolByAddress (ptr, Symbol, &symlen, &disp) == 0)
 				{
-					GuiPrintf("%s:\n%08X : %08X %08X %08X %08X\n",
-						Symbol, ptr, ptr[0], ptr[1], ptr[2], ptr[3]);
+					if (disp)
+						GuiPrintf("%s + 0x%x\n", Symbol, disp);
+					else
+						GuiPrintf("%s\n", Symbol);
 				}
-				else
-				{
-					GuiPrintf("%08X : %08X %08X %08X %08X\n",
-						ptr, ptr[0], ptr[1], ptr[2], ptr[3]);
-				}
+
+				GuiPrintf("%08X : %08X %08X %08X %08X\n",
+					ptr, ptr[0], ptr[1], ptr[2], ptr[3]);
 
 				ptr += 4;
 			}
@@ -323,6 +485,10 @@ Return Value
 			LastUnassemble = p;
 
 		GuiTextOut ("End of dump\n");
+	}
+	else if (!_stricmp(cmd, "reboot"))
+	{
+		RebootMachine ();
 	}
 	else if (!_stricmp(cmd, "prcb"))
 	{
@@ -371,14 +537,19 @@ Return Value
 		GuiTextOut (
 			"NGdbg debugger command help\n"
 			"Available commands:\n"
-			" u ADDRESS       display disassemble dump at the specified address\n"
-			" dd ADDRESS      display raw ULONG dump at the specified address\n"
-			" db ADDRESS      display raw UCHAR dump at the specified address\n"
-			" prcb            display KPRCB dump <NOT IMPLEMENTED>\n"
+			" u [ADDRESS]     display disassemble dump at the specified address\n"
+			" dd [ADDRESS]    display raw ULONG dump at the specified address\n"
+			"< db ADDRESS      display raw UCHAR dump at the specified address>\n"
+			" prcb            display KPRCB dump\n"
 			" g               go (if within exception, does not handle it)\n"
-			" de              dipatch the exception\n"
+			" de              dispatch the exception\n"
 			" i3hereuser B    sets action for usermode INT3's (B = 0 or 1)\n"
 			" i3herekernel B  sets action for kernelmode INT3's (B = 0 or 1)\n"
+			" r reg value     set register value\n"
+			" ? exp           evaluate expression (only symbols supported)\n"
+			" trap            show caller's trap frame\n"
+			" bugcheck c 1234 crash system with code c and params 1,2,3,4\n"
+			" reboot          reboot machine\n"
 			);
 	}
 	else
