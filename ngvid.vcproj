@@ -306,6 +306,10 @@
 			>
 		</File>
 		<File
+			RelativePath=".\mouse.h"
+			>
+		</File>
+		<File
 			RelativePath=".\ngdbg.cpp"
 			>
 		</File>

@@ -15,6 +15,7 @@
 #include <windows.h>
 #undef WIN32_NO_STATUS
 #include <winddi.h>
+#include "mouse.h"
 
 #define KERNEL_DEBUGGER_VERSION "0.1"
 
@@ -704,6 +705,67 @@ BOOLEAN StopProcessingCommands = FALSE;
 extern BOOLEAN DbgEnteredDebugger;
 
 VOID DisasmAtAddress (PVOID Address, ULONG nCommands);
+
+
+VOID
+StateChangeCallbackRoutine(
+	PMOUSE_STATE_CHANGE_PACKET StateChange
+	)
+
+/*++
+
+Routine Description
+
+	This is callback routine called from PS/2 mouse driver
+	 when new packet from mouse is received.
+
+Arguments
+
+	StateChange
+
+		State change packet with new mouse parameters.
+
+Return Value
+
+	None
+
+Environment
+
+	Called from mouse driver at raised IRQL
+
+--*/
+
+{
+	KdPrint(("StateChangeCallbackRoutine, Changed: [ "));
+
+	if (StateChange->Flags & MOUSE_STATE_LEFTBTN)
+		KdPrint(("LEFT "));
+	if (StateChange->Flags & MOUSE_STATE_MIDDLEBTN)
+		KdPrint(("MIDDLE "));
+	if (StateChange->Flags & MOUSE_STATE_RIGHTBTN)
+		KdPrint(("RIGHT "));
+	if (StateChange->Flags & MOUSE_STATE_MOVE_X)
+		KdPrint(("X "));
+	if (StateChange->Flags & MOUSE_STATE_MOVE_Y)
+		KdPrint(("Y "));
+	if (StateChange->Flags & MOUSE_STATE_MOVE_WHEEL)
+		KdPrint(("WHEEL "));
+
+	KdPrint(("] L %d M %d R %d X %d Y %d WH %d\n",
+		StateChange->Left,
+		StateChange->Middle,
+		StateChange->Right,
+		StateChange->X,
+		StateChange->Y,
+		StateChange->Wheel
+		));
+
+	//
+	// Nothing to do now
+	//
+
+	// TODO: redraw cursor
+}
 
 
 VOID 
