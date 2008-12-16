@@ -179,10 +179,26 @@ I8xDrainOutputBuffer(
 	}
 }
 
+VOID (*I8xMouseCallback)(UCHAR) = NULL;
+
+VOID
+I8xSetupMouseCallack(
+	VOID (*MouseCallback)(UCHAR)
+	)
+
+/**
+	Setup mouse callback
+*/
+{
+	I8xMouseCallback = MouseCallback;
+}
+
+
 NTSTATUS
 I8xGetBytePolled(
 	IN CCHAR DeviceType,
-	OUT PUCHAR Byte
+	OUT PUCHAR Byte,
+	IN BOOLEAN AllowMouseCallbacks
 	)
 /**
 	Get byte from i8042 data port (keyboard or mouse)
@@ -191,6 +207,8 @@ I8xGetBytePolled(
 {
 	UCHAR response;
 	ULONG i;
+	UCHAR mask = I8042_OUTPUT_BUFFER_FULL;
+	UCHAR auxmask = I8042_AUXOUT_BUFFER_FULL;
 
 	if (DeviceType == KeyboardDevice)
 	{
@@ -199,6 +217,10 @@ I8xGetBytePolled(
 	else if (DeviceType == MouseDevice)
 	{
 		I8xPrint3(("I8x-" __FUNCTION__ ": enter (PS/2 mouse)\n"));
+		
+		// Swap main & aux devices
+		auxmask = I8042_OUTPUT_BUFFER_FULL;
+		mask = I8042_AUXOUT_BUFFER_FULL;
 	}
 	else 
 	{
@@ -207,11 +229,14 @@ I8xGetBytePolled(
 
 	for (i=0;
 		 (i < I8042_POLLING_ITERATIONS &&
-		  ((response = I8X_GET_STATUS_BYTE() & BUFFER_FULL) != I8042_OUTPUT_BUFFER_FULL));
+		  ((response = I8X_GET_STATUS_BYTE() & BUFFER_FULL) != mask));
 		 i++)
 	{
-		//if (response & I8042_OUTPUT_BUFFER_FULL)
-		if (response & I8042_AUXOUT_BUFFER_FULL)
+		//
+		// Output buffer of our device is not full.
+		//
+		
+		if (response & auxmask)
 		{
 			//
 			// There is something in the output buffer, but it
@@ -221,6 +246,25 @@ I8xGetBytePolled(
 
 			*Byte = I8X_GET_DATA_BYTE ();
 			I8xPrint2(("I8x-" __FUNCTION__ ": ate %X\n", *Byte));
+
+			if (DeviceType != MouseDevice)
+			{
+				//
+				// Caller expects byte from 8042 controller or from 
+				//  keyboard device, but this byte is from mouse device.
+				//
+				// Call mouse process routine if need
+				//
+
+				if (I8xMouseCallback && AllowMouseCallbacks)
+				{
+					//
+					// Notice: Mouse callback routine can recursively call I8xGetBytePolled.
+					//
+
+					I8xMouseCallback (*Byte);
+				}
+			}
 		}
 		else
 		{
@@ -342,7 +386,8 @@ I8xPutBytePolled(
 
 		while ((Status = I8xGetBytePolled(
 							DeviceType,
-							&response)) == STATUS_SUCCESS)
+							&response,
+							FALSE)) == STATUS_SUCCESS)
 		{
 			if (response == I8042RS_ACKNOWLEDGE)
 			{
@@ -466,91 +511,10 @@ I8xGetByteAsynchronous(
 //  that corresponds to IRQ1
 ULONG OldKbd;
 
-//
-// Scan-Code tables
-//
-
-char KeybdAsciiCodes[] =
-{
-	0,0,'1','2','3','4','5','6','7','8','9','0','-','=',0,0,
-		'q','w','e','r','t','y','u','i','o','p','[',']',10,0,
-		'a','s','d','f','g','h','j','k','l',';','\'', '`',0,
-		'\\','z','x','c','v','b','n','m',',','.','/',0,'*',0,
-		' ',0, 0,0,0,0,0,0,0,0,0,0, 0,0, '7','8','9','-','4','5',
-		'6','+','1','2','3','0','.', 0,0
-};
-
-char KeybdAsciiCodesShifted[] =
-{
-	0,0,'!','@','#','$','%','^','&','*','(',')','_','+',0,0,
-		'Q','W','E','R','T','Y','U','I','O','P','{','}',10,0,
-		'A','S','D','F','G','H','J','K','L',':','"', '~',0,
-		'|','Z','X','C','V','B','N','M','<','>','?',0,'*',0,
-		' ',0, 0,0,0,0,0,0,0,0,0,0, 0,0, '7','8','9','-','4','5',
-		'6','+','1','2','3','0','.', 0,0
-};
-
-char *KeybdScanToAsciiTables[] = { KeybdAsciiCodes, KeybdAsciiCodesShifted };
-
-//
-// Convert scan code to ascii code
-//
-
-BOOLEAN Shift = FALSE, Ctrl = FALSE, Alt = FALSE;
-BOOLEAN CapsLock = FALSE;
-
-UCHAR 
-KeybdScanCodeToAsciiCode (
-	UCHAR ScanCode
-	)
-/**
-	Convert scan-code to ascii-code
-*/
-{
-	BOOLEAN Shifted = Shift;
-	if (CapsLock)
-	{
-		Shifted = !Shifted;
-	}
-
-	if (ScanCode < sizeof(KeybdAsciiCodes))
-        return KeybdScanToAsciiTables[Shifted][ScanCode];
-
-	return 0;
-}
-
-#define LED_NO_CHANGE	0
-#define LED_ENABLE		0x20
-#define LED_DISABLE		0x10
-
-VOID 
-KeybdSetLedIndicators (
-	UCHAR NumLock,
-	UCHAR CapsLock,
-	UCHAR ScrollLock
-	)
-/**
-	Set keyboard LED indicators.
-	Arguments:
-		NumLock, CapsLock, ScrollLock:
-			0 = do not change
-			0x10 = set to 0
-			0x20 = set to 1
-			1-F,11-1F,21-FF = reseved, don't use
-*/
-{
-	ASSERT (NumLock == LED_NO_CHANGE || NumLock == LED_DISABLE || NumLock == LED_ENABLE);
-	ASSERT (CapsLock == LED_NO_CHANGE || CapsLock == LED_DISABLE || CapsLock == LED_ENABLE);
-	ASSERT (ScrollLock == LED_NO_CHANGE || ScrollLock == LED_DISABLE || ScrollLock == LED_ENABLE);
-
-
-}
-
-
-ULONG Lock = 0;
-extern "C" void __stdcall HalReturnToFirmware(signed int a1);
 
 #define PROFILE 0
+
+VOID (*ProcessScanCode) (UCHAR);
 
 BOOLEAN
 KeyboardISR(
@@ -561,8 +525,6 @@ KeyboardISR(
 */
 {
 	UCHAR ScanCode;
-	UCHAR AsciiCode;
-	BOOLEAN UP;
 	BOOLEAN Return = TRUE;
 
 #if PROFILE
@@ -646,70 +608,7 @@ KeyboardISR(
 		goto _request_resend_and_return;
 	}
 
-	UP = ScanCode >> 7;
-	ScanCode &= 0x7F;
-
-	AsciiCode  = KeybdScanCodeToAsciiCode (ScanCode);
-
-	if (AsciiCode && 0)
-	{
-		KdPrint (("SCAN %02X ", ScanCode));
-		KdPrint(("(%c)", AsciiCode));
-		KdPrint(("\n"));
-	}
-
-	switch (ScanCode)
-	{
-	case 42:
-	case 54:
-		Shift = !UP;
-//		KdPrint(("Shifting %s\n", Shift ? "ON" : "OFF"));
-		break;
-
-	case 0x1D:
-		Ctrl = !UP;
-//		KdPrint(("Ctrl %s\n", Ctrl ? "ON" : "OFF"));
-		break;
-
-	case 56:
-		Alt = !UP;
-//		KdPrint(("Alt %s\n", Alt ? "ON" : "OFF"));
-		break;
-
-	case 0x58:
-		if (Ctrl && Alt && Shift)
-		{
-			KdPrint(("Entered debugger\n"));
-			KdPrint(("Press ESC to unlock\n"));
-			KIRQL Irql = KfRaiseIrql (HIGH_LEVEL);
-
-			UCHAR Byte;
-			NTSTATUS Status;
-
-			do
-			{
-				while ((Status = I8xGetBytePolled (
-						KeyboardDevice,
-						&Byte)) == STATUS_IO_TIMEOUT)
-					;
-
-				if (Status == STATUS_SUCCESS)
-				{
-					KdPrint(("LOCK scan %X\n", Byte));
-				}
-
-			}
-			while (Byte != 1);
-
-			KfLowerIrql (Irql);
-			KdPrint(("Unlocked\n"));
-
-			// Don't resend the key
-			Return = TRUE;
-			goto _return_no_resend;
-		}
-		break;
-	}
+	ProcessScanCode (ScanCode);
 
 	Return = TRUE;
 
@@ -750,7 +649,7 @@ _request_resend_and_return:
 	I8xPutBytePolled (DataPort, 
 		ControllerDevice, 
 		FALSE, 
-		ScanCode | (UP << 7));
+		ScanCode);
 
 	// Enable keyboard & mouse
 	I8xPutBytePolled (CommandPort,
@@ -764,18 +663,6 @@ _request_resend_and_return:
 		(UCHAR) I8042_ENABLE_MOUSE
 		);
 
-	/*
-	//
-	// Write scan-code back to keyboard directly
-	//
-
-	I8xPutBytePolled (DataPort, 
-		KeyboardDevice, 
-		FALSE, 
-		ScanCode | (UP << 7));
-	*/
-
-_return_no_resend:
 	return Return;
 }
 
@@ -791,7 +678,6 @@ BOOLEAN
 		return FALSE;
 	return OldISR(Interrupt, ServiceContext);
 }
-
 
 PVOID 
 IoHookInterrupt (
@@ -814,42 +700,44 @@ IoHookInterrupt (
 	return Handler;
 }
 
-#define HOOK_ISR	0
-
-// Unload routine
-void DriverUnload(IN PDRIVER_OBJECT DriverObject)
+VOID
+I8042HookKeyboardIsr(
+	VOID (*pProcessScanCode)(UCHAR)
+	)
 {
-#if HOOK_ISR
-	IoHookInterrupt ((UCHAR)OldKbd, OldISR);
-#endif
-
-	KdPrint(("[~] DriverUnload()\n"));
+	ProcessScanCode = pProcessScanCode;
+	OldKbd = GetIOAPICIntVector (1);
+	*(PVOID*)&OldISR = IoHookInterrupt ( (UCHAR)OldKbd, InterruptService);
 }
+
 
 #include <ntddkbd.h>
 #include <ntddmou.h>
 #include <ntdd8042.h>
 
-BOOLEAN
-  IsrHookRoutine(
-    IN PVOID  IsrContext,
-    IN PKEYBOARD_INPUT_DATA  CurrentInput,
-    IN POUTPUT_PACKET  CurrentOutput,
-    IN OUT UCHAR  StatusByte,
-    IN PUCHAR  Byte,
-    OUT PBOOLEAN  ContinueProcessing,
-    IN PKEYBOARD_SCAN_STATE  ScanState
-    )
-{
-	KdPrint(("IsrHookRoutine: Byte %X\n", *Byte));
-	*ContinueProcessing = TRUE;
-	return TRUE;
-}
-
 NTSTATUS
 I8042HookKeyboard(
 	PI8042_KEYBOARD_ISR IsrRoutine
 	)
+	
+/*++
+
+Routine Description
+
+	Hook keyboard by calling i8042prt with ioctl code IOCTL_INTERNAL_I8042_HOOK_KEYBOARD
+
+Arguments
+
+	IsrRoutine
+
+		New hook routine
+
+Return value
+
+	NTSTATUS of the operation
+
+--*/
+
 {
 	UNICODE_STRING DeviceName;
 	PDEVICE_OBJECT DeviceObject;
@@ -875,7 +763,7 @@ I8042HookKeyboard(
 	KeInitializeEvent (&Event, SynchronizationEvent, FALSE);
 
 	INTERNAL_I8042_HOOK_KEYBOARD hookkbd = {0};
-	hookkbd.IsrRoutine = IsrHookRoutine;
+	hookkbd.IsrRoutine = IsrRoutine;
 	
 	Irp = IoBuildDeviceIoControlRequest (
 		IOCTL_INTERNAL_I8042_HOOK_KEYBOARD,
@@ -917,23 +805,4 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING Registry
 
 	return STATUS_UNSUCCESSFUL;
 
-	/*
-	DriverObject->DriverUnload = DriverUnload;
-#if HOOK_ISR
-	OldKbd = GetIOAPICIntVector (1);
-	KdPrint(("KBD %X\n", OldKbd));
-
-	*(PVOID*)&OldISR = IoHookInterrupt ( (UCHAR)OldKbd, InterruptService);
-
-	ASSERT (OldISR);
-#else
-
-	I8042HookKeyboard (IsrHookRoutine);
-
-	DriverObject->DriverUnload = NULL;
-#endif
-
-	KdPrint(("[+] Driver initialization successful\n"));
-	return STATUS_SUCCESS;
-	*/
 }

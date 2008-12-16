@@ -12,10 +12,9 @@
 #include "dbgeng.h"
 #include "i8042.h"
 
-ULONG OldKbd;
 
 VOID WR_ENTER_DEBUGGER (BOOLEAN UserInitiated, PDBG_CALLBACK Callback, PVOID Argument);
-
+VOID ProcessMouseInput (UCHAR Byte);
 
 //
 // Scan-Code tables
@@ -135,6 +134,7 @@ UCHAR KbdGetKeyAsychnorous()
 
 UCHAR 
 KbdGetKeyPolled(
+	IN BOOLEAN AllowMouseCallback
 	)
 
 /*++
@@ -146,7 +146,9 @@ Routine Description
 
 Arguments
 
-	None
+	AllowMouseCallback
+
+		Should 8042.sys call mouse callback if it detects byte from mousr
 
 Return Value
 
@@ -162,7 +164,7 @@ Environment
 	NTSTATUS Status;
 	UCHAR Byte;
 
-	Status = I8xGetBytePolled (KeyboardDevice, &Byte);
+	Status = I8xGetBytePolled (KeyboardDevice, &Byte, AllowMouseCallback);
 
 	if (!NT_SUCCESS(Status))
 		Byte = 0;
@@ -484,6 +486,7 @@ Environment
 	ProcessLockKeys (ScanCode, UP);
 }
 
+extern BOOLEAN BootDebuggingInitiated;
 
 VOID 
 ProcessScanCode (
@@ -555,16 +558,19 @@ Environment
 			WR_ENTER_DEBUGGER (TRUE, NULL, NULL);
 			KdPrint(("Exit debugger\n"));
 
-			//
-			// Put break codes for ctrl, alt and shift
-			// to let i8042 know that user have released them.
-			//
+			if (BootDebuggingInitiated == FALSE)
+			{
+				//
+				// Put break codes for ctrl, alt and shift
+				// to let i8042 know that user have released them.
+				//
 
-			KeInsertQueueDpc (
-				&HotkeyResetStateDpc,
-				NULL,
-				NULL
-				);
+				KeInsertQueueDpc (
+					&HotkeyResetStateDpc,
+					NULL,
+					NULL
+					);
+			}
 		}
 		break;
 	}

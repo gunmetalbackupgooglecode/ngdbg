@@ -209,7 +209,8 @@ typedef enum _PORT_TYPE {
 NTSTATUS
 I8xGetBytePolled(
 	IN CCHAR DeviceType,
-	OUT PUCHAR Byte
+	OUT PUCHAR Byte,
+	IN BOOLEAN AllowMouseCallback
 	);
 
 NTSTATUS

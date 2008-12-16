@@ -5,6 +5,8 @@
 	ngdbg.cpp
 
 	This file contains DriverEntry and DriverUnload routines.
+	Also in contais routines BootStartUp and BootCleanUp used
+	 when debugger is set to be started while Windows is booting up.
 	
 --*/
 
@@ -16,6 +18,8 @@
 #include "winddi.h"
 #include "win32k.h"
 #include <stdarg.h>
+#include "symbols.h"
+#include "gui.h"
 
 _SURFOBJ *pPrimarySurf;
 PVOID pDrvCopyBits;
@@ -65,9 +69,17 @@ VOID
 Worker(
 	);
 
+PVOID 
+IoHookInterrupt (
+	ULONG Vector, 
+	PVOID NewRoutine
+	);
+
 UCHAR SplicingBuffer[50];
 UCHAR BackupBuffer[5];
 ULONG BackupWritten;
+
+BOOLEAN BootDebuggingInitiated = FALSE;
 
 extern PEPROCESS CsrProcess;
 extern "C"
@@ -112,6 +124,10 @@ VOID
     IN PVOID  SystemArgument1,
     IN PVOID  SystemArgument2
     );
+
+VOID
+MouseInitialize(
+	);
 
 //
 // Driver unload routine
@@ -358,6 +374,8 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING )
 	//I8042HookKeyboard  ((PI8042_KEYBOARD_ISR) IsrHookRoutine);
 #endif
 
+	MouseInitialize ();
+
 	KdPrint(("Keyboard hooked\n"));
 
 	KeInitializeDpc (&HotkeyResetStateDpc, HotkeyResetStateDeferredRoutine, NULL);
@@ -375,3 +393,139 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING )
 	KdPrint(("[+] Driver initialization successful\n"));
 	return STATUS_SUCCESS;
 }
+
+VOID
+BootGuiInitialize(
+	);
+
+extern "C"
+BOOLEAN
+FindBaseAndSize(
+	IN PVOID SomePtr,
+	OUT PVOID *BaseAddress OPTIONAL, 
+	OUT ULONG *ImageSize OPTIONAL
+	);
+
+PVOID GetKernelAddress (PWSTR);
+
+extern "C" extern PVOID pNtBase;
+VOID I8042HookKeyboardIsr(VOID (NTAPI *)(UCHAR));
+VOID ProcessScanCode(UCHAR);
+
+NTSTATUS
+BootStartUp(
+	)
+
+/*++
+
+Routine Description
+
+	This routine is called during Windows boot up from ngboot.sys
+	This routine performs initialization like DriverEntry, but 
+	 without driver-specific initialization (like modifying DriverObject, etc)
+	 becase ngbood.sys simply imports from ngdbg.sys and Windows does not
+	 create driver object for driver being imported from another drivers.
+	 Also Windows Kernel does not call entry point of driver being imported.
+	So ngboot.sys have to manually call BootStartUp and BootStartUp should
+	 perform initialization.
+
+Arguments
+
+	None
+
+Return Value
+
+	NTSTATUS of initialization
+
+Environment
+
+	System startup
+
+--*/
+
+{
+	NTSTATUS Status;
+
+	//
+	// Indicate that debugging is initiated at boot time.
+	//
+
+	BootDebuggingInitiated = TRUE;
+
+
+	//
+	// At system startup we cannot use several features:
+	//
+	// 1) i8042prt routines to hook keyboard (i8042prt.sys possibly is not loaded yet).
+	//    So we have to hook keyboard IRQ manually.
+	//
+	// 2) win32k services to output to screen. Win32 subsystem may be not loaded yet.
+	//    So we have to output to screen using bootvid.dll
+	//
+
+	//
+	// Initialize boot gui
+	//
+
+	BootGuiInitialize ();
+
+	//
+	// Load symbols (usually Worker() loads symbols, which is not called at boot time)
+	//
+
+	if(!FindBaseAndSize (GetKernelAddress(L"DbgPrint"), &pNtBase, NULL))
+	{
+		KdPrint(("Could not get nt base\n"));
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	// Initialize symbol engine and load symbols
+	SymInitialize ( FALSE );	// don't use EngMapFile
+
+	Status = SymLoadSymbolFile (L"nt", pNtBase);
+	KdPrint(("nt symbols loaded with status %X\n", Status));
+
+	Status = SymLoadSymbolFile (L"hal.dll", NULL);
+	KdPrint(("hal.dll symbols loaded with status %X\n", Status));
+
+
+	//
+	// Set keyboard hook to 8042.sys instead of i8042prt.sys system driver
+	//
+
+	I8042HookKeyboardIsr(&ProcessScanCode);
+
+	//
+	// Initialize mouse hook
+	//
+
+	MouseInitialize ();
+
+	//
+	// Initialize debug engine
+	//
+
+	DbgInitialize ();
+
+
+	//
+	// Write some chars
+	//
+
+	for (ULONG i=0; i<90; i++)
+	{
+		GuiPrintf ("Line %d\n", i);
+	}
+
+	return STATUS_SUCCESS;
+}
+
+
+VOID
+BootCleanUp(
+	)
+{
+	KdPrint (( __FUNCTION__ " : Not implemented\n"));
+	ASSERT (FALSE);
+}
+
