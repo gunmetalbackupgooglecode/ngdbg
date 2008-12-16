@@ -20,6 +20,7 @@
 #include <stdarg.h>
 #include "symbols.h"
 #include "gui.h"
+#include "mouse.h"
 
 _SURFOBJ *pPrimarySurf;
 PVOID pDrvCopyBits;
@@ -125,9 +126,7 @@ VOID
     IN PVOID  SystemArgument2
     );
 
-VOID
-MouseInitialize(
-	);
+
 
 //
 // Driver unload routine
@@ -374,7 +373,7 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING )
 	//I8042HookKeyboard  ((PI8042_KEYBOARD_ISR) IsrHookRoutine);
 #endif
 
-	MouseInitialize ();
+	MouseInitialize (StateChangeCallbackRoutine);
 
 	KdPrint(("Keyboard hooked\n"));
 
@@ -499,7 +498,7 @@ Environment
 	// Initialize mouse hook
 	//
 
-	MouseInitialize ();
+	MouseInitialize (StateChangeCallbackRoutine);
 
 	//
 	// Initialize debug engine

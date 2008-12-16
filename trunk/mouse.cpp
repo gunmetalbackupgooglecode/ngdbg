@@ -76,8 +76,6 @@ Environment
 	return Byte;
 }
 
-BOOLEAN Left, Middle, Right;
-
 #if DBG
 VOID
 MouDumpPacket (
@@ -126,13 +124,107 @@ Environment
 #define MouDumpPacket(PACKET) NOTHING;
 #endif
 
+BOOLEAN Left, Middle, Right;
+
 MOUSE_PACKET Packet;
 UCHAR BytesLoaded = 0;
 
 LONG MouseX = 0;
 LONG MouseY = 0;
+LONG MouseWheel = 0;
 
 BOOLEAN Resynch = FALSE;
+
+#include "mouse.h"
+
+VOID
+(*MouseStateChangeCallback)(
+	PMOUSE_STATE_CHANGE_PACKET
+	);
+
+VOID
+ReportMouseStateChange(
+	)
+{
+	MOUSE_STATE_CHANGE_PACKET StateChange = {0};
+
+	//
+	// Calculate new values for button states
+	//  and currect X,Y,wheel coordinates.
+	//
+
+	CHAR ShiftX = (CHAR) Packet.XMovement;
+	CHAR ShiftY = (CHAR) Packet.YMovement;
+	CHAR ShiftZ = (CHAR) Packet.ZMovement;
+
+	if (Packet.u1.e1.XSign)
+	{
+		MouseX += ShiftX;		// ShiftX already have correct sign
+	}
+	else
+	{
+		MouseX += (ULONG)ShiftX;		// ShiftX is negative
+	}
+
+	if (Packet.u1.e1.YSign)
+	{
+		MouseY += ShiftY;
+	}
+	else
+	{
+		// Up
+		MouseY += (ULONG) ShiftY;
+	}
+
+	MouseWheel += ShiftZ; // with correct sign
+
+	if (Left != Packet.u1.e1.Left)
+	{
+		Left = Packet.u1.e1.Left;
+		StateChange.Flags |= MOUSE_STATE_LEFTBTN;
+	}
+
+	if (Right != Packet.u1.e1.Right)
+	{
+		Right = Packet.u1.e1.Right;
+		StateChange.Flags |= MOUSE_STATE_RIGHTBTN;
+	}
+
+	if (Middle != Packet.u1.e1.Middle)
+	{
+		Middle = Packet.u1.e1.Middle;
+		StateChange.Flags |= MOUSE_STATE_MIDDLEBTN;
+	}
+
+	if (ShiftX)
+		StateChange.Flags |= MOUSE_STATE_MOVE_X;
+
+	if (ShiftY)
+		StateChange.Flags |= MOUSE_STATE_MOVE_Y;
+
+	if (ShiftZ)
+		StateChange.Flags |= MOUSE_STATE_MOVE_WHEEL;
+
+	//
+	// Fill out StateChange fields
+	//
+
+	StateChange.X = MouseX;
+	StateChange.Y = MouseY;
+	StateChange.Wheel = MouseWheel;
+
+	StateChange.Left = Left;
+	StateChange.Right = Right;
+	StateChange.Middle = Middle;
+
+	//
+	// Packet OK.
+	// Call our callback
+	//
+
+	if (MouseStateChangeCallback)
+		MouseStateChangeCallback (&StateChange);
+}
 
 VOID
 ProcessMouseInput (
@@ -199,7 +291,7 @@ Environment
 	{
 		BytesLoaded = 0;
 
-		KdPrint(("Got full mouse packet\n"));
+//		KdPrint(("Got full mouse packet\n"));
 
 		if (!Packet.u1.e1.Synch)
 		{
@@ -220,32 +312,7 @@ Environment
 
 		MouDumpPacket (&Packet);
 
-		CHAR ShiftX = (CHAR) Packet.XMovement;// * ( Packet.u1.e1.XSign * (-1));
-		CHAR ShiftY = (CHAR) Packet.YMovement;// * ( Packet.u1.e1.YSign * (-1));
-
-		if (Packet.u1.e1.XSign)
-		{
-			MouseX += ShiftX;		// ShiftX already have correct sign
-		}
-		else
-		{
-			MouseX -= (ULONG)ShiftX;		// ShiftX is negative
-		}
-
-		if (Packet.u1.e1.YSign)
-		{
-			MouseY += ShiftY;
-		}
-		else
-		{
-			// Up
-			MouseY -= (ULONG) ShiftY;
-		}
-
-		KdPrint(("Mouse [->X %d ->Y %d] X %d Y %d\n", 
-			ShiftX, 
-			ShiftY, 
-			MouseX, MouseY));
+		ReportMouseStateChange ();
 	}
 }
 
@@ -256,6 +323,7 @@ I8xSetupMouseCallack(
 
 VOID
 MouseInitialize(
+	VOID (*StateChangeCallback)(PMOUSE_STATE_CHANGE_PACKET)
 	)
 
 /*++
@@ -266,7 +334,10 @@ Routine Description
 
 Arguments
 
-	None
+	StateChangeCallback
+	
+		State change callback which will be called when new packet from mouse
+		 is received.
 
 Return Value
 
@@ -280,4 +351,6 @@ Environment
 
 {
 	I8xSetupMouseCallack (ProcessMouseInput);
+
+	MouseStateChangeCallback = StateChangeCallback;
 }
