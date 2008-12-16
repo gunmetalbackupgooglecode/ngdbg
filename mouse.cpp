@@ -220,34 +220,31 @@ Environment
 
 		MouDumpPacket (&Packet);
 
-		ULONG ShiftX = Packet.XMovement;// * ( Packet.u1.e1.XSign * (-1));
-		ULONG ShiftY = Packet.YMovement;// * ( Packet.u1.e1.YSign * (-1));
+		CHAR ShiftX = (CHAR) Packet.XMovement;// * ( Packet.u1.e1.XSign * (-1));
+		CHAR ShiftY = (CHAR) Packet.YMovement;// * ( Packet.u1.e1.YSign * (-1));
 
 		if (Packet.u1.e1.XSign)
 		{
-			// Left
-			MouseX -= ShiftX;
+			MouseX += ShiftX;		// ShiftX already have correct sign
 		}
 		else
 		{
-			// Right
-			MouseX += ShiftX;
+			MouseX -= (ULONG)ShiftX;		// ShiftX is negative
 		}
 
 		if (Packet.u1.e1.YSign)
 		{
-			// Down
 			MouseY += ShiftY;
 		}
 		else
 		{
 			// Up
-			MouseY -= ShiftY;
+			MouseY -= (ULONG) ShiftY;
 		}
 
-		KdPrint(("Mouse [->X %c%d ->Y %c%d] X %d Y %d\n", 
-			Packet.u1.e1.XSign ? '-' : '+', ShiftX, 
-			Packet.u1.e1.YSign ? '+' : '-', ShiftY, 
+		KdPrint(("Mouse [->X %d ->Y %d] X %d Y %d\n", 
+			ShiftX, 
+			ShiftY, 
 			MouseX, MouseY));
 	}
 }
