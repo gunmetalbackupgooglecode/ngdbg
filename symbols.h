@@ -25,6 +25,7 @@ SymGetSymbolByName(
 
 VOID
 SymInitialize(
+	BOOLEAN CanUseW32
 	);
 
 NTSTATUS

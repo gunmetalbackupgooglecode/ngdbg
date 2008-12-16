@@ -78,45 +78,62 @@ typedef struct FONT_PARAMETERS
 
 } *PFONT_PARAMETERS;
 
+extern "C"
+{
+
+extern
 NTSTATUS
-GuiLoadBitmap(
+(*GuiLoadBitmap)(
 	PWSTR BitmapFileName,
 	PLOADED_BITMAP Bitmap
 	);
 
+extern
 VOID
-GuiUnloadBitmap(
+(*GuiUnloadBitmap)(
 	PLOADED_BITMAP Bitmap
 	);
 
+extern
 NTSTATUS
-GuiLoadActiveFont(
+(*GuiLoadActiveFont)(
 	);
 
+extern
 VOID
-GuiUnloadFont(
+(*GuiUnloadFont)(
 	);
 
+extern
 ULONG
-GuiGetCharFontPosition(
+(*GuiGetCharFontPosition)(
 	IN CHAR c
 	);
 
+extern
 VOID
-GuiScrollLines(
+(*GuiScrollLines)(
 	IN ULONG nLines
 	);
 
+extern
 VOID
-GuiTextOut(
+(*GuiTextOut)(
 	IN PCHAR Text
 	);
 
+extern
 VOID
-_cdecl
-GuiPrintf(
+(_cdecl
+*GuiPrintf)(
 	IN PCHAR Format,
 	...
+	);
+
+}
+
+BOOLEAN
+DisplayBuffer(
 	);
 
 #define LINUX_LF_OUTPUT 1

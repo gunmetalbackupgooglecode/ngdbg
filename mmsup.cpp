@@ -238,6 +238,31 @@ Return value
 	return TRUE;
 }
 
+// Irql < DISPATCH_LEVEL
+VOID MmMakeAddressWritable (PVOID VirtualAddress, BOOLEAN Write)
+{
+	ASSERT (MmIsSystemAddressAccessable(VirtualAddress));
+
+	// load page
+	ULONG t = *(ULONG*)VirtualAddress;
+
+	// make it writable
+	if (CR4() & PAE_ON)
+	{
+		PMMPTE_PAE PointerPte;
+
+		PointerPte = MiGetPteAddressPae (VirtualAddress);
+		PointerPte->u.Hard.Write = Write;
+	}
+	else
+	{
+		PMMPTE PointerPte;
+
+		PointerPte = MiGetPteAddress (VirtualAddress);
+		PointerPte->u.Hard.Valid = Write;
+	}
+}
+
 PMDL LockMem (PVOID Buffer, ULONG Size)
 {
 	PMDL Mdl = IoAllocateMdl (Buffer, Size, FALSE, FALSE, NULL);

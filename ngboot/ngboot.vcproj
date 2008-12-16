@@ -2,9 +2,8 @@
 <VisualStudioProject
 	ProjectType="Visual C++"
 	Version="9,00"
-	Name="ngvid"
+	Name="ngboot"
 	ProjectGUID="{27A67058-A316-408D-BA5D-BFA39D24448F}"
-	RootNamespace="ngvid"
 	TargetFrameworkVersion="131072"
 	>
 	<Platforms>
@@ -43,7 +42,7 @@
 				MkTypLibCompatible="true"
 				SuppressStartupBanner="true"
 				TargetEnvironment="1"
-				TypeLibraryName=".\Release/ngvid.tlb"
+				TypeLibraryName=".\Release/ngboot.tlb"
 				HeaderFileName=""
 			/>
 			<Tool
@@ -56,7 +55,7 @@
 				BufferSecurityCheck="false"
 				EnableFunctionLevelLinking="true"
 				UsePrecompiledHeader="0"
-				PrecompiledHeaderFile=".\Release/ngvid.pch"
+				PrecompiledHeaderFile=".\Release/ngboot.pch"
 				AssemblerListingLocation=".\Release/"
 				ObjectFile=".\Release/"
 				ProgramDataBaseFileName=".\Release/"
@@ -80,8 +79,8 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/DRIVER /ALIGN:32 /subsystem:native /safeseh:no"
-				AdditionalDependencies="ntoskrnl.lib hal.lib ndis.lib Release\winstb.lib $(NOINHERIT)"
-				OutputFile="Release/ngvid.sys"
+				AdditionalDependencies="ntoskrnl.lib hal.lib ndis.lib"
+				OutputFile="Release/ngboot.sys"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
 				GenerateManifest="false"
@@ -142,7 +141,7 @@
 				MkTypLibCompatible="true"
 				SuppressStartupBanner="true"
 				TargetEnvironment="1"
-				TypeLibraryName=".\Release/ngvid.tlb"
+				TypeLibraryName=".\Release/ngboot.tlb"
 				HeaderFileName=""
 			/>
 			<Tool
@@ -155,7 +154,7 @@
 				BufferSecurityCheck="false"
 				EnableFunctionLevelLinking="true"
 				UsePrecompiledHeader="0"
-				PrecompiledHeaderFile=".\Debug/ngvid.pch"
+				PrecompiledHeaderFile=".\Debug/ngboot.pch"
 				AssemblerListingLocation=".\Debug/"
 				ObjectFile=".\Debug/"
 				ProgramDataBaseFileName=".\Debug/"
@@ -180,13 +179,12 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/ALIGN:32 /subsystem:native /safeseh:no /DRIVER"
-				AdditionalDependencies="ntoskrnl.lib hal.lib bootvid.lib bin\vcrt.lib ndis.lib bin\winstb.lib bin\8042.lib $(NOINHERIT)"
-				OutputFile="bin/ngdbg.sys"
+				AdditionalDependencies="../bin/ngdbg.lib ntoskrnl.lib hal.lib ndis.lib $(NOINHERIT)"
+				OutputFile="../bin/ngboot.sys"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
 				GenerateManifest="false"
 				IgnoreAllDefaultLibraries="true"
-				ModuleDefinitionFile="ngdbg.def"
 				GenerateDebugInformation="true"
 				EntryPointSymbol="DriverEntry"
 				BaseAddress="0x00010000"
@@ -222,99 +220,7 @@
 	</References>
 	<Files>
 		<File
-			RelativePath=".\base.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\bootgui.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\bootvid.h"
-			>
-		</File>
-		<File
-			RelativePath=".\command.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\config.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\config.h"
-			>
-		</File>
-		<File
-			RelativePath=".\dbgeng.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\dbgeng.h"
-			>
-		</File>
-		<File
-			RelativePath=".\Disasm.c"
-			>
-		</File>
-		<File
-			RelativePath=".\Disasm.h"
-			>
-		</File>
-		<File
-			RelativePath=".\findproc.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\gui.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\gui.h"
-			>
-		</File>
-		<File
-			RelativePath=".\i8042.h"
-			>
-		</File>
-		<File
-			RelativePath=".\internal.h"
-			>
-		</File>
-		<File
-			RelativePath=".\intvect.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\keyboard.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\ldasm.c"
-			>
-		</File>
-		<File
-			RelativePath=".\ldasm.h"
-			>
-		</File>
-		<File
-			RelativePath=".\mmsup.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\mouse.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\ngdbg.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\ngdbg.def"
-			>
-		</File>
-		<File
-			RelativePath="ngvid.cpp"
+			RelativePath="ngboot.cpp"
 			>
 			<FileConfiguration
 				Name="Release|Win32"
@@ -338,47 +244,7 @@
 			</FileConfiguration>
 		</File>
 		<File
-			RelativePath=".\ngvid.res"
-			>
-		</File>
-		<File
 			RelativePath="H:\Program Files\Microsoft Visual Studio\VC98\Include\ntddk\ddk\ntddk.h"
-			>
-		</File>
-		<File
-			RelativePath=".\splice.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\splice.h"
-			>
-		</File>
-		<File
-			RelativePath=".\symbols.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\symbols.h"
-			>
-		</File>
-		<File
-			RelativePath=".\table.c"
-			>
-		</File>
-		<File
-			RelativePath=".\win32k.cpp"
-			>
-		</File>
-		<File
-			RelativePath=".\win32k.h"
-			>
-		</File>
-		<File
-			RelativePath=".\winddi.h"
-			>
-		</File>
-		<File
-			RelativePath=".\worker.cpp"
 			>
 		</File>
 	</Files>

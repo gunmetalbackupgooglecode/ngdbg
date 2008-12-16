@@ -63,8 +63,8 @@ Return Value
 // Declarations
 //
 
-VOID _cdecl EngPrint (char*, ...);
-#define KdPrint(X) EngPrint X
+extern "C" VOID _cdecl DbgPrint (char*, ...);
+#define KdPrint(X) DbgPrint X
 
 extern SURFOBJ *pPrimarySurf;
 extern PVOID pDrvCopyBits;
@@ -395,82 +395,10 @@ Environment
 	}
 
 	//
-	// Load NT symbols
+	// Initialize symbol engine and load symbols
 	//
 
-	/*
-	PIMAGE_DOS_HEADER NtDos = (PIMAGE_DOS_HEADER) pNtBase;
-	PIMAGE_NT_HEADERS NtHeaders = (PIMAGE_NT_HEADERS)((PUCHAR)NtDos + NtDos->e_lfanew);
-
-	HANDLE hKey = RegOpenKey (L"\\Registry\\Machine\\Software\\NGdbg\\Symbols", KEY_QUERY_VALUE);
-	if (hKey == NULL)
-	{
-		KdPrint(("Could not open symbols key\n"));
-	}
-	else
-	{
-		WCHAR SymbolPath[512];
-		ULONG Len = sizeof(SymbolPath)-8;
-		wcscpy (SymbolPath, L"\\??\\");
-
-		KdPrint (("Opened 'symbols' key, hk=%X\n", hKey));
-
-		if(!RegQueryValue (hKey, L"nt", REG_SZ, SymbolPath+4, &Len))
-		{
-			KdPrint(("Could not query value for nt symbols\n"));
-		}
-		else
-		{
-			KdPrint(("nt symbols: %S\n", SymbolPath));
-
-			pNtSymbols = EngMapFile (SymbolPath, 0, &iNtSymbols);
-			if (!pNtSymbols)
-			{
-				KdPrint(("Could not load nt symbols\n"));
-			}
-			else
-			{
-				KdPrint(("nt symbols mapped at %X\n", pNtSymbols));
-
-				// are symbols correct?
-
-				if( *(ULONG*)pNtSymbols == NtHeaders->FileHeader.TimeDateStamp )
-				{
-					KdPrint(("Symbols are correct\n"));
-
-					// Lock symbols in memory
-					ULONG Size = 4;
-
-					PSYMINFO info = (PSYMINFO) ((PUCHAR)pNtSymbols + 4);
-
-					while (info->NextEntryDelta)
-					{
-						Size += info->NextEntryDelta;
-						*(ULONG*)&info += info->NextEntryDelta;
-					}
-
-					SymMdl = LockMem (pNtSymbols, Size);
-
-					KdPrint(("Symbols locked\n"));
-				}
-				else
-				{
-					KdPrint(("Incorrect symbols! nt timestamp %X, sym timestamp %X\n",
-						pNtSymbols,
-						NtHeaders->FileHeader.TimeDateStamp
-						));
-
-					EngUnmapFile (iNtSymbols);
-					pNtSymbols = NULL;
-				}
-			}
-		}
-
-		ZwClose (hKey);
-	}
-	*/
-
-	SymInitialize();
+	SymInitialize ( TRUE );
 
 	Status = SymLoadSymbolFile (L"nt", pNtBase);
 	KdPrint(("nt symbols loaded with status %X\n", Status));
@@ -636,7 +564,12 @@ Environment
 	KdPrint(( __FUNCTION__ " : completed\n"));
 }
 
-UCHAR KbdGetKeyPolled();
+UCHAR 
+KbdGetKeyPolled(
+	IN BOOLEAN AllowMouseCallback
+	);
+
+extern BOOLEAN BootDebuggingInitiated;
 
 BOOLEAN
 DisplayBuffer(
@@ -665,6 +598,16 @@ Environment
 --*/
 
 {
+	if (BootDebuggingInitiated)
+	{
+		//
+		// No need to refresh screen at boot time.
+		// InbvDisplayString do it
+		//
+
+		return TRUE;
+	}
+
 	RECTL Rect;
 	POINTL Point;
 
@@ -812,38 +755,45 @@ Environment
 {
 	BOOL s;
 	ULONG State;
-//	KAPC_STATE State;
-
-	EngFastAttachProcess (CsrProcess, &State);
-//	KeStackAttachProcess (CsrProcess, &State);
-
-	KdPrint(("WR_ENTER_DEBUGGER enter\n"));
-
-	DbgEnteredDebugger = TRUE;
-
-	KdPrint(("Surf->pvBits = %X\n", pPrimarySurf->pvBits));
-	KdPrint(("pGDISurf->pvBits = %X\n", pGDISurf->pvBits));
-
-	KdPrint(("Backing up..\n"));
-
 	RECTL Rect;
 	POINTL Point = {StartX, StartY};
 
-	Rect.left = 0;
-	Rect.top = 0;
-	Rect.right =  Width;
-	Rect.bottom = Height;
+	//
+	// don't perform some operations at boot time
+	//
 
-	s = xxxDrvCopyBits (
-		pBackupSurface,
-		pPrimarySurf,
-		NULL,
-		NULL,
-		&Rect,
-		&Point
-		);
+	if (BootDebuggingInitiated == FALSE)
+	{
+		EngFastAttachProcess (CsrProcess, &State);
+	}
 
-	KdPrint(("Backed up with status %X\n", s));
+	KdPrint(("WR_ENTER_DEBUGGER enter%s\n", BootDebuggingInitiated ? "(AT BOOT TIME)" : ""));
+
+	DbgEnteredDebugger = TRUE;
+
+	if (BootDebuggingInitiated == FALSE)
+	{
+		KdPrint(("Surf->pvBits = %X\n", pPrimarySurf->pvBits));
+		KdPrint(("pGDISurf->pvBits = %X\n", pGDISurf->pvBits));
+
+		KdPrint(("Backing up..\n"));
+
+		Rect.left = 0;
+		Rect.top = 0;
+		Rect.right =  Width;
+		Rect.bottom = Height;
+
+		s = xxxDrvCopyBits (
+			pBackupSurface,
+			pPrimarySurf,
+			NULL,
+			NULL,
+			&Rect,
+			&Point
+			);
+
+		KdPrint(("Backed up with status %X\n", s));
+	}
 
 	//
 	// Settings keyboard leds.
@@ -893,7 +843,7 @@ Environment
 	{
 		PollIdle ();
 
-		Byte = KbdGetKeyPolled();
+		Byte = KbdGetKeyPolled (TRUE);
 
 		if (Byte == 0)
 			continue;
@@ -969,31 +919,36 @@ Environment
 
 //	KbdSetLeds (WindowsNum, WindowsCaps, WindowsScroll);
 
-	//
-	// Restore screen
-	//
+	if (BootDebuggingInitiated == FALSE)
+	{
+		//
+		// Restore screen
+		//
 
-	Point.x = 0;
-	Point.y = 0;
-	Rect.left = StartX;
-	Rect.top = StartY;
-	Rect.right =  StartX + Width;
-	Rect.bottom = StartX + Height;
+		Point.x = 0;
+		Point.y = 0;
+		Rect.left = StartX;
+		Rect.top = StartY;
+		Rect.right =  StartX + Width;
+		Rect.bottom = StartX + Height;
 
-	s = xxxDrvCopyBits(
-			pPrimarySurf, 
-			pBackupSurface, 
-			NULL,
-			NULL,
-			&Rect,
-			&Point
-			);
+		s = xxxDrvCopyBits(
+				pPrimarySurf, 
+				pBackupSurface, 
+				NULL,
+				NULL,
+				&Rect,
+				&Point
+				);
+	}
 
 	KdPrint(("WR_ENTER_DEBUGGER exit\n"));
 
 	DbgEnteredDebugger = FALSE;
 
-	EngFastDetachProcess (State);
-//	KeUnstackDetachProcess (&State);
+	if (BootDebuggingInitiated == FALSE)
+	{
+		EngFastDetachProcess (State);
+	}
 }
 

@@ -79,12 +79,190 @@ PVOID FindImage (PWSTR);
 PMDL LockMem (PVOID,ULONG);
 VOID UnlockMem (PMDL);
 
+BOOLEAN CanUseEng;
+
+typedef struct _INTERNAL_MAPPED_FILE
+{
+	PVOID Section;
+	PVOID MappedBase;
+} INTERNAL_MAPPED_FILE, *PINTERNAL_MAPPED_FILE;
+
+
+PVOID 
+MapFile (
+	PWSTR FileName, 
+	ULONG Size, 
+	ULONG_PTR *iMappedFile
+	)
+
+/*++
+
+	This function is a wrapper to EngMapFile if we can use win32 Eng* routines
+	 or it maps file manually with ZwCreateFile/MmCreateSection/MmMapViewInSystemSpace
+
+	FIXME:
+	MmCreateSection and MmMapViewInSystemSpace are undocumented and may be changed
+	 or deleted in next versions of Windows Kernel.
+	Fix it by mapping normal view, allocating system-space paged and copying it.
+
+	See EngMapFile reference for parameter description
+
+--*/
+
+{
+	if (CanUseEng)
+		return EngMapFile (FileName, Size, iMappedFile);
+
+	//
+	// Cannot use EngMapFile
+	//
+	// Map view manually by ZwCreateFile/MmCreateSection/MmMapViewInSystemSpace
+	//
+
+	OBJECT_ATTRIBUTES Oa;
+	UNICODE_STRING UnicodeName;
+	IO_STATUS_BLOCK IoStatus;
+	NTSTATUS Status;
+	HANDLE hFile;
+	PVOID MappedBase = NULL;
+
+	RtlInitUnicodeString (&UnicodeName, FileName);
+	InitializeObjectAttributes (&Oa, &UnicodeName, OBJ_KERNEL_HANDLE|OBJ_CASE_INSENSITIVE, 0, 0);
+
+	Status = ZwCreateFile (
+		&hFile,
+		GENERIC_READ,
+		&Oa,
+		&IoStatus,
+		NULL,
+		0,
+		FILE_SHARE_READ,
+		FILE_OPEN,
+		FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE,
+		NULL,
+		0
+		);
+
+	KdPrint(("MapFile: ZwCreateFile = %X\n", Status));
+
+	if (NT_SUCCESS(Status))
+	{
+		FILE_STANDARD_INFORMATION Info = {0};
+
+		Status = ZwQueryInformationFile (
+			hFile,
+			&IoStatus,
+			&Info,
+			sizeof(Info),
+			FileStandardInformation
+			);
+
+		KdPrint(("MapFile: ZwQueryInformationFile = %X\n", Status));
+
+		if (NT_SUCCESS(Status))
+		{
+			PVOID Section;
+
+			InitializeObjectAttributes (&Oa, 0, OBJ_KERNEL_HANDLE, 0, 0);
+
+			LARGE_INTEGER MaximumSize = {0};
+			if (Size)
+				MaximumSize.LowPart = Size;
+			else
+				MaximumSize = Info.EndOfFile;
+
+			Status = MmCreateSection (
+				&Section,
+				SECTION_MAP_READ | SECTION_QUERY,
+				&Oa,
+				&Info.EndOfFile,
+				PAGE_READONLY,
+				SEC_COMMIT,
+				hFile,
+				NULL
+				);
+
+			KdPrint(("MapFile: MmCreateSection = %X, Section %X\n", Status, Section));
+
+			if (NT_SUCCESS(Status))
+			{
+				ULONG Zero = 0;
+
+				Status = MmMapViewInSystemSpace (
+					Section, 
+					&MappedBase,
+					&Zero
+					);
+
+				KdPrint(("MapFile: MmMapViewInSystemSpace = %X, MappedBase %X\n", Status, MappedBase));
+
+				if (NT_SUCCESS(Status))
+				{
+					PINTERNAL_MAPPED_FILE MappedFile = (PINTERNAL_MAPPED_FILE) 
+						ExAllocatePool (NonPagedPoolMustSucceed, sizeof(INTERNAL_MAPPED_FILE));
+
+					MappedFile->MappedBase = MappedBase;
+					MappedFile->Section = Section;
+
+					*iMappedFile = (ULONG_PTR) MappedFile;
+					Status = STATUS_SUCCESS;
+				}
+				else
+				{
+					// Don't need a pointer to Section object if MmMapViewInSystemSpace failed
+					ObDereferenceObject (Section);
+				}
+			}
+		}
+
+		// Don't need a file object
+		ZwClose (hFile);
+	}
+
+	return MappedBase;
+}
+
+VOID 
+UnmapFile (
+	ULONG_PTR iMappedFile
+	)
+
+/*++
+
+	This function is a wrapper to EngUnmapFile if we can use win32 Eng* routines
+	 or it unmaps file manually by MmUnmapViewInSystemSpace
+
+	See EngUnmapFile reference for parameter description
+
+--*/
+
+{
+	if (CanUseEng)
+		return EngUnmapFile (iMappedFile);
+
+	//
+	// Cannot use EngUnmapFile
+	//
+	// Call MmUnmapViewInSystemSpace to unmap file
+	//  and delete section object
+	//
+
+	PINTERNAL_MAPPED_FILE MappedFile = (PINTERNAL_MAPPED_FILE) iMappedFile;
+
+	MmUnmapViewInSystemSpace (MappedFile->MappedBase);
+	ObDereferenceObject (MappedFile->Section);
+	ExFreePool (MappedFile);
+}
+
 VOID
 SymInitialize(
+	BOOLEAN CanUseW32
 	)
 {
 	InitializeListHead (&SymListHead);
 	ExInitializeFastMutex (&SymListLock);
+
+	CanUseEng = CanUseW32;
 }
 
 NTSTATUS
@@ -168,11 +346,11 @@ SymLoadSymbolFile(
 
 	ZwClose (hKey);
 
-	sym->LoadedSymbols = (PLOADED_SYMBOLS)EngMapFile (SymFileName, 0, &sym->iMappedSymbols);
+	sym->LoadedSymbols = (PLOADED_SYMBOLS)MapFile (SymFileName, 0, &sym->iMappedSymbols);
 	if (sym->LoadedSymbols == NULL)
 	{
 		ExFreePool (sym);
-		KdPrint(( __FUNCTION__ " : EngMapFile failed for %S\n", SymFileName));
+		KdPrint(( __FUNCTION__ " : MapFile failed for %S\n", SymFileName));
 		return STATUS_NOT_FOUND;
 	}
 
@@ -191,7 +369,7 @@ SymLoadSymbolFile(
 	if (!sym->Mdl)
 	{
 		KdPrint(( __FUNCTION__ " : LockMem failed for %X size %X\n", sym->LoadedSymbols, Size));
-		EngUnmapFile (sym->iMappedSymbols);
+		UnmapFile (sym->iMappedSymbols);
 		ExFreePool (sym);
 		return STATUS_UNSUCCESSFUL;
 	}
@@ -203,7 +381,7 @@ SymLoadSymbolFile(
 		KdPrint(( __FUNCTION__ " : symbols are incorrect (sym timestamp %X mod timestamp %X)\n",
 			sym->LoadedSymbols->TimeDateStamp, pSymNtHeaders->FileHeader.TimeDateStamp));
 		UnlockMem (sym->Mdl);
-		EngUnmapFile (sym->iMappedSymbols);
+		UnmapFile (sym->iMappedSymbols);
 		ExFreePool (sym);
 		return STATUS_UNSUCCESSFUL;
 	}
@@ -222,7 +400,7 @@ InternalSymUnloadSymbolTable(
 	)
 {
 	UnlockMem (Sym->Mdl);
-	EngUnmapFile (Sym->iMappedSymbols);
+	UnmapFile (Sym->iMappedSymbols);
 	ExFreePool (Sym);
 }
 

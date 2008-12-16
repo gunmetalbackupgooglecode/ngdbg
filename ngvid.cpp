@@ -23,38 +23,10 @@
 #define  KBD_HOOK_ISR		0
 
 
-PVOID 
-IoHookInterrupt (
-	ULONG Vector, 
-	PVOID NewRoutine
-	);
-
-extern BOOLEAN (*OldISR)(PKINTERRUPT,PVOID);
-
-BOOLEAN
-  InterruptService(
-    IN PKINTERRUPT  Interrupt,
-    IN PVOID  ServiceContext
-    );
-
-PVOID
-GetVector(
-  IN UCHAR Interrupt
-  );
-
-ULONG 
-GetIOAPICIntVector (
-	ULONG Vector
-	);
-
-
 VOID 
 ProcessScanCode(
 	UCHAR Byte
 	);
-
-
-
 //
 // Hook routine for IOCTL_INTERNAL_I8042_HOOK_KEYBOARD
 //
@@ -87,85 +59,8 @@ BOOLEAN
 NTSTATUS
 I8042HookKeyboard(
 	PI8042_KEYBOARD_ISR IsrRoutine
-	)
+	);
 
-/*++
-
-Routine Description
-
-	Hook keyboard by calling i8042prt with ioctl code IOCTL_INTERNAL_I8042_HOOK_KEYBOARD
-
-Arguments
-
-	IsrRoutine
-
-		New hook routine
-
-Return value
-
-	NTSTATUS of the operation
-
---*/
-
-{
-	UNICODE_STRING DeviceName;
-	PDEVICE_OBJECT DeviceObject;
-	PFILE_OBJECT FileObject;
-	NTSTATUS Status;
-
-	RtlInitUnicodeString (&DeviceName, L"\\Device\\KeyboardClass0");
-
-	Status = IoGetDeviceObjectPointer (&DeviceName,
-		FILE_READ_ATTRIBUTES,
-		&FileObject,
-		&DeviceObject);
-	if (!NT_SUCCESS(Status))
-	{
-		KdPrint(("IoGetDeviceObjectPointer failed st %X\n", Status));
-		return Status;
-	}
-
-	PIRP Irp;
-	IO_STATUS_BLOCK IoStatus;
-	KEVENT Event;
-
-	KeInitializeEvent (&Event, SynchronizationEvent, FALSE);
-
-	INTERNAL_I8042_HOOK_KEYBOARD hookkbd = {0};
-	hookkbd.IsrRoutine = IsrRoutine;
-	
-	Irp = IoBuildDeviceIoControlRequest (
-		IOCTL_INTERNAL_I8042_HOOK_KEYBOARD,
-		DeviceObject,
-		&hookkbd,
-		sizeof(hookkbd),
-		NULL,
-		0,
-		TRUE,
-		&Event,
-		&IoStatus );
-
-	Status = IoCallDriver (DeviceObject, Irp);
-
-	if (Status == STATUS_PENDING)
-	{
-		KeWaitForSingleObject (&Event, Executive, KernelMode, FALSE, NULL);
-	}
-
-	if (NT_SUCCESS(Status))
-		Status = IoStatus.Status;
-
-	ObDereferenceObject (FileObject);
-
-	if (!NT_SUCCESS(Status))
-	{
-		KdPrint(("IOCTL_INTERNAL_HOOK_KEYBOARD failed with status %X\n", Status));
-		return Status;
-	}
-
-	KdPrint(("IOCTL_INTERNAL_HOOK_KEYBOARD ok\n"));
-	return STATUS_SUCCESS;
-}
 
 #pragma pack(push,1)
 typedef union TRAMPOLINE

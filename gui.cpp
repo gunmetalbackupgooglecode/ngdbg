@@ -17,7 +17,7 @@
 #include "config.h"
 
 NTSTATUS
-GuiLoadBitmap(
+W32GuiLoadBitmap(
 	PWSTR BitmapFileName,
 	PLOADED_BITMAP Bitmap
 	)
@@ -63,7 +63,7 @@ Environment
 }
 
 VOID
-GuiUnloadBitmap(
+W32GuiUnloadBitmap(
 	PLOADED_BITMAP Bitmap
 	)
 
@@ -71,7 +71,7 @@ GuiUnloadBitmap(
 
 Routine Description
 
-	Unload image previously loaded by GuiLoadBitmap
+	Unload image previously loaded by W32GuiLoadBitmap
 
 Arguments
 
@@ -105,7 +105,7 @@ char FontString[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 
 
 NTSTATUS
-GuiLoadActiveFont(
+W32GuiLoadActiveFont(
 	)
 {
 	NTSTATUS Status;
@@ -195,11 +195,11 @@ GuiLoadActiveFont(
 
 	KdPrint(("Font file name: %S\n", FileName.Buffer));
 
-	Status = GuiLoadBitmap (FileName.Buffer, &ActiveFont.LoadedFont);
+	Status = W32GuiLoadBitmap (FileName.Buffer, &ActiveFont.LoadedFont);
 	if (!NT_SUCCESS(Status))
 	{
 		ExFreePool (FileName.Buffer);
-		KdPrint(("GuiLoadBitmap failed for font file (Status %X)\n", Status));
+		KdPrint(("W32GuiLoadBitmap failed for font file (Status %X)\n", Status));
 		return Status;
 	}
 
@@ -215,7 +215,7 @@ GuiLoadActiveFont(
 			ActiveFont.LoadedFont.info->biHeight,
 			ActiveFont.CharHeight
 			));
-		GuiUnloadBitmap (&ActiveFont.LoadedFont);
+		W32GuiUnloadBitmap (&ActiveFont.LoadedFont);
 		ExFreePool (FileName.Buffer);
 		return STATUS_INVALID_FILE_FOR_SECTION;
 	}
@@ -233,7 +233,7 @@ GuiLoadActiveFont(
 	if (!ActiveFont.hFontBitmap)
 	{
 		KdPrint(("EngCreateBitmap failed for font\n"));
-		GuiUnloadBitmap (&ActiveFont.LoadedFont);
+		W32GuiUnloadBitmap (&ActiveFont.LoadedFont);
 		ExFreePool (FileName.Buffer);
 		return STATUS_UNSUCCESSFUL;
 	}
@@ -244,7 +244,7 @@ GuiLoadActiveFont(
 	{
 		KdPrint(("EngLockSurface failed for font surface\n"));
 		EngDeleteSurface ((HSURF)ActiveFont.hFontBitmap);
-		GuiUnloadBitmap (&ActiveFont.LoadedFont);
+		W32GuiUnloadBitmap (&ActiveFont.LoadedFont);
 		ExFreePool (FileName.Buffer);
 		return STATUS_UNSUCCESSFUL;
 	}
@@ -256,7 +256,7 @@ GuiLoadActiveFont(
 		KdPrint(("LockMem failed for font surface\n"));
 		EngUnlockSurface (ActiveFont.pFontSurf);
 		EngDeleteSurface ((HSURF)ActiveFont.hFontBitmap);
-		GuiUnloadBitmap (&ActiveFont.LoadedFont);
+		W32GuiUnloadBitmap (&ActiveFont.LoadedFont);
 		ExFreePool (FileName.Buffer);
 		return STATUS_UNSUCCESSFUL;
 	}
@@ -267,25 +267,25 @@ GuiLoadActiveFont(
 }
 
 VOID
-GuiUnloadFont(
+W32GuiUnloadFont(
 	)
 /**
 	Unload active font
 */
 {
-	KdPrint(("GuiUnloadFont enter\n"));
+	KdPrint(("W32GuiUnloadFont enter\n"));
 
 	UnlockMem (ActiveFont.pFontMdl);
 	EngUnlockSurface (ActiveFont.pFontSurf);
 	EngDeleteSurface ((HSURF)ActiveFont.hFontBitmap);
-	GuiUnloadBitmap (&ActiveFont.LoadedFont);
+	W32GuiUnloadBitmap (&ActiveFont.LoadedFont);
 	ExFreePool (ActiveFont.FileName.Buffer);
 
-	KdPrint(("GuiUnloadFont exit\n"));
+	KdPrint(("W32GuiUnloadFont exit\n"));
 }
 
 ULONG
-GuiGetCharFontPosition(
+W32GuiGetCharFontPosition(
 	IN CHAR c
 	)
 
@@ -330,7 +330,7 @@ ULONG _x = 0, _y = 0;
 extern SURFOBJ* pGDISurf;
 
 BOOLEAN
-GuiFillRegion(
+W32GuiFillRegion(
 	ULONG x,
 	ULONG y,
 	ULONG w,
@@ -343,7 +343,7 @@ GuiFillRegion(
 }
 
 VOID
-GuiScrollLines(
+W32GuiScrollLines(
 	IN ULONG nLines
 	)
 
@@ -408,7 +408,7 @@ ULONG nScrollLines = 3;
 
 
 VOID
-GuiTextOut(
+W32GuiTextOut(
 	IN PCHAR Text
 	)
 
@@ -443,7 +443,7 @@ Return Value
 		if( _y + ActiveFont.CharHeight >= (Height-SpareY) )
 		{
 			//__asm int 3
-			GuiScrollLines( nScrollLines );
+			W32GuiScrollLines( nScrollLines );
 			DisplayBuffer();
 		}
 
@@ -466,18 +466,18 @@ Return Value
 
 		if( Char == ' ' )
 		{
-			GuiFillRegion( _x, _y, ActiveFont.CharWidth, ActiveFont.CharHeight-1, RGB(0xFF,0xFF,0xFF) );
+			W32GuiFillRegion( _x, _y, ActiveFont.CharWidth, ActiveFont.CharHeight-1, RGB(0xFF,0xFF,0xFF) );
 		}
 		else if( Char != '\n' && Char != '\r' )
 		{
-			int position = GuiGetCharFontPosition( Char );
+			int position = W32GuiGetCharFontPosition( Char );
 			if( position == -1 )
-				position = GuiGetCharFontPosition( '?' );
+				position = W32GuiGetCharFontPosition( '?' );
 
 			ULONG filex = position * ActiveFont.CharWidth;
 
 			/*
-			Status = GuiDisplayBitmapPart( 
+			Status = W32GuiDisplayBitmapPart( 
 				LoadedFont,
 				LoadedFontBitmapSize,
 				_x, _y,
@@ -534,7 +534,7 @@ extern "C" extern int _cdecl _vsnprintf (char*, int, const char*, va_list);
 
 VOID
 _cdecl
-GuiPrintf(
+W32GuiPrintf(
 	IN PCHAR Format,
 	...
 	)
@@ -546,5 +546,89 @@ GuiPrintf(
 	va_start (va, Format);
 
 	_vsnprintf (TempPrintBuffer, sizeof(TempPrintBuffer)-1, Format, va);
-	GuiTextOut (TempPrintBuffer);
+	W32GuiTextOut (TempPrintBuffer);
 }
+
+/*
+NTSTATUS
+W32GuiLoadBitmap(
+	PWSTR BitmapFileName,
+	PLOADED_BITMAP Bitmap
+	);
+
+VOID
+W32GuiUnloadBitmap(
+	PLOADED_BITMAP Bitmap
+	);
+
+NTSTATUS
+W32GuiLoadActiveFont(
+	);
+
+VOID
+W32GuiUnloadFont(
+	);
+
+ULONG
+W32GuiGetCharFontPosition(
+	IN CHAR c
+	);
+
+VOID
+W32GuiScrollLines(
+	IN ULONG nLines
+	);
+
+VOID
+W32GuiTextOut(
+	IN PCHAR Text
+	);
+
+VOID
+_cdecl
+W32GuiPrintf(
+	IN PCHAR Format,
+	...
+	);
+*/
+
+NTSTATUS
+(*GuiLoadBitmap)(
+	PWSTR BitmapFileName,
+	PLOADED_BITMAP Bitmap
+	) = &W32GuiLoadBitmap;
+
+VOID
+(*GuiUnloadBitmap)(
+	PLOADED_BITMAP Bitmap
+	) = &W32GuiUnloadBitmap;
+
+NTSTATUS
+(*GuiLoadActiveFont)(
+	) = &W32GuiLoadActiveFont;
+
+VOID
+(*GuiUnloadFont)(
+	) = &W32GuiUnloadFont;
+
+ULONG
+(*GuiGetCharFontPosition)(
+	IN CHAR c
+	) = &W32GuiGetCharFontPosition;
+
+VOID
+(*GuiScrollLines)(
+	IN ULONG nLines
+	) = &W32GuiScrollLines;
+
+VOID
+(*GuiTextOut)(
+	IN PCHAR Text
+	) = &W32GuiTextOut;
+
+VOID
+(_cdecl
+*GuiPrintf)(
+	IN PCHAR Format,
+	...
+	) = &W32GuiPrintf;
