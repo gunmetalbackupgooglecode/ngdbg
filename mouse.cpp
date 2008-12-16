@@ -22,14 +22,14 @@ typedef union MOUSE_PACKET
 			UCHAR Buttons;
 			struct
 			{
-				UCHAR Left : 1;
-				UCHAR Right : 1;
-				UCHAR Middle : 1;
-				UCHAR Synch : 1;
-				UCHAR XSign : 1;
-				UCHAR YSign : 1;
-				UCHAR XOverflow : 1;
-				UCHAR YOverflow : 1;
+				UCHAR Left : 1;			// Left button down
+				UCHAR Right : 1;		// Right button down
+				UCHAR Middle : 1;		// Middle button down
+				UCHAR Synch : 1;		// Synchronizattion bit, always 1
+				UCHAR XSign : 1;		// XMovement is negative (LEFT)
+				UCHAR YSign : 1;		// YMovement is negative (DOWN)
+				UCHAR XOverflow : 1;	// XMovement overflow
+				UCHAR YOverflow : 1;	// YMovement overflow
 			} e1;
 		} u1;
 		UCHAR XMovement;
