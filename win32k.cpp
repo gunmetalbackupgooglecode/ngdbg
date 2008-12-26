@@ -159,6 +159,8 @@ Return Address
 		}
 	}
 
+	KdPrint(("CsrProcess %x\n", CsrProcess));
+
 	W32PrepareCall ();
 
 	if (!FindShadowTable())

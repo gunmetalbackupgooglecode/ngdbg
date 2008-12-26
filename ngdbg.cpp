@@ -178,6 +178,11 @@ NewDrvCopyBits(
 	return ((BOOLEAN (*)(SURFOBJ*,SURFOBJ*,VOID*,VOID*,VOID*,VOID*))&SplicingBuffer) (psoDst, psoSrc, pco, pxlo, prclDst, pptlSrc);
 }
 
+VOID MmAllowPageFaultsAtRaisedIrql ();
+VOID MmForbidPageFaultsAtRaisedIrql ();
+
+ULONG MajorVersion;
+ULONG MinorVersion;
 
 //
 // Driver entry point
@@ -187,14 +192,37 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING )
 	DriverObject->DriverUnload = DriverUnload;
 	KdPrint(("[~] DriverEntry()\n"));
 
-	/*
+	PsGetVersion (&MajorVersion, &MinorVersion, 0, 0);
+
+	if (MajorVersion >= 6)
+	{
+		KdPrint(("Windows Vista and later are not supported yet\n"));
+		return STATUS_NOT_SUPPORTED;
+	}
+	if (MajorVersion < 5 || MinorVersion == 0)
+	{
+		KdPrint(("Windows NT and 2000 are not supported\n"));
+		return STATUS_NOT_SUPPORTED;
+	}
+
+	ASSERT (MajorVersion == 5);
+	ASSERT (MinorVersion >= 1 && MinorVersion <= 2);
+
+	if (MinorVersion == 1)
+	{
+		KdPrint(("Running on Windows XP\n"));
+	}
+	else
+	{
+		KdPrint(("Running on Windows 2003 Server\n"));
+	}
+
 	if (KeNumberProcessors > 1)
 	{
 		KdPrint(("Your number of processors : %d\n", KeNumberProcessors));
-		KdPrint(("Only UP machines supported\n"));
+		KdPrint(("Only UP (uniprocessor) machines supported\n"));
 		return STATUS_NOT_SUPPORTED;
 	}
-	*/
 
 	KdPrint (("First hello from nt\n"));
 
@@ -206,8 +234,6 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING )
 
 	// import something from W32k
 	EngPrint ("Second hello from win32k\n");
-
-	//////////////////////////////////////////////////////// !! DEBUG DEBUG !!     ////////////
 
 	HANDLE hCsrProcess;
 	NTSTATUS Status;
@@ -235,7 +261,11 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING )
 	// EngLoadImage uses KeAttachProcess/KeDetachProcess to attach to csrss process
 	// KeDetachProcess detaches to thread's original process, but our thread's
 	// original process is System! (because we are running in the context of system
-	// worker thread that loads a driver).
+	// worker thread that loads a driver). 
+	//    (
+	//    |  fucken windows programmers could not call KeStackAttachProcess 
+	//    |   instead of KeAttachProcess :(
+	//    )
 	// So we have to run our function in the context of csrss.exe
 	//
 
@@ -301,7 +331,9 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING )
 		return STATUS_UNSUCCESSFUL;
 	}
 
-	//////////////////////////////////////////////////////// !! DEBUG DEBUG !!     ////////////
+	//
+	// Query keyboard LEDs
+	//
 
 	if(!NT_SUCCESS(KbdWinQueryLeds()))
 	{

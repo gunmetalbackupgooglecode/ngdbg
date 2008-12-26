@@ -127,7 +127,16 @@ PVOID FindImage (PWSTR ImageName)
 
 	if (Modules)
 	{
-		for (ULONG i=0; i<Modules->ModuleCount; i++)
+		ULONG i;
+
+		if (!_wcsicmp(ImageName, L"hal.dll"))
+		{
+			// hal is always the second in the list.
+			i = 1;
+			goto _found;
+		}
+
+		for (i=0; i<Modules->ModuleCount; i++)
 		{
 			char *relative_name = strrchr (Modules->Modules[i].ImageName, '\\');
 			if (relative_name)
@@ -139,6 +148,7 @@ PVOID FindImage (PWSTR ImageName)
 
 			if (!_strnicmp (relative_name, AnsiImageName.Buffer, AnsiImageName.Length))
 			{
+_found:
 				PVOID CapturedBase = Modules->Modules[i].Base;
 
 				KdPrint(("Found image : '%s' base at %X\n", relative_name, Modules->Modules[i].Base));

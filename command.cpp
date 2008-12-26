@@ -244,6 +244,269 @@ VOID WriteRegister (char *regname, ULONG Value)
 	}
 }
 
+//
+// Stack frame for function call
+//
+
+typedef struct STACK_FRAME
+{
+	UCHAR* ReturnAddress;
+	ULONG Arguments[1];
+} *PSTACK_FRAME;
+
+//
+// FPO frame for function call
+//
+
+typedef struct BASE_FRAME
+{
+	BASE_FRAME *SaveEbp;
+
+	union
+	{
+		struct
+		{
+			UCHAR* ReturnAddress;
+			ULONG Arguments[1];
+		};
+		STACK_FRAME StackFrame;
+	};
+} *PBASE_FRAME;
+
+
+BOOLEAN
+MmIsSystemAddressAccessable(
+	PVOID VirtualAddress
+	);
+
+PBASE_FRAME 
+LookupBaseFrame (
+	PVOID esp, 
+	PVOID ebp,
+	PSTACK_FRAME StackFrame
+	)
+
+/*++
+
+Routine Description
+
+	This routine searches ebp frame for the specified stack frame if it exists
+	EBP frame is a pointer to BASE_FRAME which has the following structure:
+
+	base frame:
+		+0	Saved EBP
+	(stack frame:)
+		+4	Return Address
+		+8	Arguments
+
+	This routine receives pointer to stack frame and checks if
+	 base frame (StackFrame-4) exists. If so, its address is returned.
+	If not, function returns null.
+		
+Arguments
+
+	esp, ebp
+	
+		esp/ebp values
+
+	StackFrame
+
+		stack frame to search ebp frame for
+
+Return Value
+
+	Pointer to ebp frame (StackFrame-4) or null
+
+--*/
+
+{
+	for (PBASE_FRAME Frame = (PBASE_FRAME) ebp;
+		 MmIsSystemAddressAccessable (Frame);
+		 Frame = Frame->SaveEbp)
+	{
+		if (&Frame->StackFrame == StackFrame)
+			return Frame;
+	}
+	return NULL;
+}
+
+
+VOID
+StackBacktrace (
+	PVOID esp, 
+	PVOID ebp, 
+	PVOID eip,
+	PVOID StackBase
+	)
+
+/*++
+
+Routine Description
+
+	 This function performs stack backtrace
+
+Arguments
+
+
+	esp, ebp, eip
+
+		register values for backtrace
+
+Return Value
+
+	None
+
+--*/
+	
+{
+	PBASE_FRAME Frame = (PBASE_FRAME) ebp;
+
+	//__asm int 3;
+
+	GuiPrintf("Stack backtrace ESP %x EBP %x EIP %x Base %x\n", esp, ebp, eip, StackBase);
+	KdPrint(("Stack backtrace ESP %x EBP %x EIP %x Base %x\n", esp, ebp, eip, StackBase));
+	GuiPrintf("Return frames:\n");
+	GuiPrintf("EBP       ChildEBP  Return    Arguments\n");
+	KdPrint(("EBP       ChildEBP  Return    Arguments\n"));
+
+	PVOID pFunction = eip;
+
+	for ( UCHAR** StackPointer = (UCHAR**)esp;
+		  MmIsSystemAddressAccessable (StackPointer) && 
+		    (ULONG) StackPointer < (ULONG) StackBase;
+		  StackPointer++ )
+	{
+		PSTACK_FRAME Frame = (PSTACK_FRAME) StackPointer;
+
+		UCHAR* Return = Frame->ReturnAddress;
+
+		if ((ULONG)Return <  0x10000)
+			continue;
+
+		if (!MmIsSystemAddressAccessable (Return-5))
+			continue;
+
+//		KdPrint(("%08x: MmIsSystemAddressAccessable(%x) = %d\n",
+//			StackPointer,
+//			Return-5,
+//			MmIsSystemAddressAccessable (Return-5)
+//			));
+			
+
+		// Call?
+		if (Return[-5] == 0xE8 ||
+			Return[-2] == 0xFF ||
+			Return[-3] == 0xFF ||
+			(Return[-7] == 0xFF && Return[-6] == 0x15))
+		{
+//			if (!IsAddressInCodeSection(Return))
+//				printf("Return address is not within any known module\n");
+
+			PUCHAR AddressToCheck = NULL;
+
+			if (Return[-2] == 0xFF || Return[-3] == 0xFF)
+			{
+				KdPrint(("0xFF opcode is not fully supported yet\n"));
+				GuiPrintf("0xFF opcode is not fully supported yet\n");
+			}
+			else if (Return[-5] == 0xE8) // CALL XXX
+			{
+				AddressToCheck = Return + *(ULONG*)&Return[-4];
+			}
+			else if (Return[-7] == 0xFF && Return[-6] == 0x15) // CALL DWORD PTR DS:[XXX]
+			{
+				PUCHAR* IndirectCall = *(PUCHAR**)&Return[-4];
+				if (!MmIsSystemAddressAccessable (IndirectCall))
+					continue;
+
+				AddressToCheck = *IndirectCall;
+			}
+
+			if (!MmIsSystemAddressAccessable (AddressToCheck))
+				continue;
+
+			char sym[128] = "";
+			ULONG disp, len = sizeof(sym);
+			NTSTATUS Status;
+
+			sprintf (sym, "0x%x", pFunction);
+
+			Status = SymGlobGetNearestSymbolByAddress (
+				pFunction,
+				sym,
+				&len,
+				&disp
+				);
+			if (NT_SUCCESS(Status))
+			{
+				if (disp)
+					sprintf (sym+strlen(sym), "+0x%x", disp);
+			}
+
+			PBASE_FRAME BaseFrame = LookupBaseFrame (esp, ebp, Frame);
+			
+			if (BaseFrame)
+			{
+				Frame = &BaseFrame->StackFrame;
+			}
+
+			GuiPrintf("%08x: %08x  %08x  %08x %08x %08x %08x %s\n",
+				Frame, 
+				BaseFrame ? BaseFrame->SaveEbp : NULL,
+				Return,
+				Frame->Arguments[0],
+				Frame->Arguments[1],
+				Frame->Arguments[2],
+				Frame->Arguments[3],
+				sym
+				);
+
+			KdPrint(("%08x: %08x  %08x  %08x %08x %08x %08x %s\n",
+				Frame, 
+				BaseFrame ? BaseFrame->SaveEbp : NULL,
+				Return,
+				Frame->Arguments[0],
+				Frame->Arguments[1],
+				Frame->Arguments[2],
+				Frame->Arguments[3],
+				sym
+				));
+
+			pFunction = Frame->ReturnAddress;
+		}
+	}
+
+	char sym[128] = "";
+	ULONG disp;
+	ULONG len = sizeof(sym);
+	NTSTATUS Status;
+
+	sprintf (sym, "0x%x", pFunction);
+
+	Status = SymGlobGetNearestSymbolByAddress (
+		pFunction,
+		sym,
+		&len,
+		&disp
+		);
+	if (NT_SUCCESS(Status))
+	{
+		if (disp)
+			sprintf (sym+strlen(sym), "+0x%x", disp);
+	}
+
+	GuiPrintf("%08x: %08x  %08x  %08x %08x %08x %08x 0x%08x\n",
+		0, 
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		pFunction
+		);
+}
+
 VOID
 ProcessCommand(
 	CHAR* Command
@@ -391,6 +654,50 @@ Return Value
 	else if (!_stricmp (cmd, "g"))
 	{
 		StopProcessingCommands = TRUE;
+	}
+	else if (!_stricmp (cmd, "kb"))
+	{
+		KdPrint(("TrapFrame = %x, EBP %x EIP %x CS %x\n",
+			TrapFrame,
+			TrapFrame->Ebp,
+			TrapFrame->Eip,
+			TrapFrame->SegCs
+			));
+
+		ULONG ebp = TrapFrame->Ebp;
+		ULONG esp = 0;
+		ULONG eip = TrapFrame->Eip;
+		PKPCR Pcr = (PKPCR) KIP0PCRADDRESS;
+		ULONG StackBase = (ULONG) Pcr->NtTib.StackBase;
+
+		KdPrint(("segcs = %x\n", TrapFrame->SegCs));
+
+		if ((TrapFrame->SegCs & 3) == 0)
+		{
+			// Call from kernel-mode
+			esp = (ULONG) &TrapFrame->HardwareEsp;
+			KdPrint(("Kernel-mode esp used\n"));
+		}
+		else
+		{
+			// Call from user-mode
+			esp = TrapFrame->HardwareEsp;
+			KdPrint(("User-mode esp used\n"));
+		}
+
+		KdPrint(("esp %x ebp %x eip %x stackbase %x\n",
+			esp,
+			ebp,
+			eip,
+			StackBase
+			));
+
+		StackBacktrace (
+			(PVOID) esp,
+			(PVOID) ebp,
+			(PVOID) eip,
+			(PVOID) StackBase
+			);
 	}
 	else if (!_stricmp (cmd, "?"))
 	{

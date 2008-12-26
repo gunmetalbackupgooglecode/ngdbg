@@ -327,7 +327,14 @@ extern ULONG SpareY;
 
 ULONG _x = 0, _y = 0;
 
-extern SURFOBJ* pGDISurf;
+typedef struct SURFACE
+{
+	HBITMAP hBitmap;
+	SURFOBJ* pSurface;
+	PMDL pMdl;
+} *PSURFACE;
+
+extern SURFACE *GDISurf;
 
 BOOLEAN
 W32GuiFillRegion(
@@ -339,7 +346,7 @@ W32GuiFillRegion(
 	)
 {
 	RECTL dst = {x, y, x+w, y+h};
-	return EngEraseSurface (pGDISurf, &dst, color);
+	return EngEraseSurface (GDISurf->pSurface, &dst, color);
 }
 
 VOID
@@ -381,8 +388,8 @@ This function can be called at any IRQL
 //		nLines, _y, PointFrom.x, PointFrom.y, PointFrom.x+(Width-SpareX*2), PointFrom.y+_y-SpareY));
 
 	EngCopyBits (
-		pGDISurf,
-		pGDISurf,
+		GDISurf->pSurface,
+		GDISurf->pSurface,
 		NULL,
 		NULL,
 		&RectDest,
@@ -397,7 +404,7 @@ This function can be called at any IRQL
 //	KdPrint(("Scrolling lines: erasing from %d %d %d %d\n",
 //		RectDest.left, RectDest.top, RectDest.right, RectDest.bottom));
 
-	EngEraseSurface (pGDISurf, &RectDest, RGB(0xFF,0xFF,0xFF));
+	EngEraseSurface (GDISurf->pSurface, &RectDest, RGB(0xFF,0xFF,0xFF));
 
 	_y -= ActiveFont.CharHeight * nLines;
 }
@@ -490,7 +497,7 @@ Return Value
 			POINTL PointSrc = { filex, 0 };
 
 			EngCopyBits (
-				pGDISurf,
+				GDISurf->pSurface,
 				ActiveFont.pFontSurf,
 				NULL,
 				NULL,

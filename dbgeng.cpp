@@ -6,6 +6,9 @@
 
 	This file contains general debug-engine routines.
 
+Revision History:
+	24-Dec-2008	Great	Fixed bug - ATTEMPTED_WRITE_TO_READ_ONLY_MEMORY bugcheck on 2003 R2 (DbgHookHalImports)
+
 --*/
 
 #include <ntifs.h>
@@ -36,6 +39,118 @@ PVOID *ppKiDispatchInterrupt;
 VOID (NTAPI *KiDispatchInterrupt)();
 
 BOOLEAN DbgEnteredDebugger;
+
+struct DBGBP
+{
+	BOOLEAN Free;
+	PVOID Address;
+	UCHAR OldByte;
+};
+
+KSPIN_LOCK DbgCcLock;
+DBGBP DbgCcBreakpoints[MAX_BREAKPOINTS];
+PVOID DbgExpectedSingleStep;
+
+BOOLEAN MmIsSystemAddressAccessable (PVOID);
+
+NTSTATUS
+DbgAddCcBreakpoint(
+	IN PVOID Address,
+	OUT PULONG Number
+	)
+
+/*++
+
+Routine Description
+
+	This routine adds a 0xCC (INT3) breakpoint
+
+Arguments
+
+	Address
+		virtual address of code
+
+	Number
+		receives breakpoint number or -1
+
+Return Value
+
+	STATUS_SUCCESS on success, error status on failure
+
+Enrivonment
+
+	Debugger active
+
+--*/
+
+{
+	NTSTATUS Status = STATUS_INSUFFICIENT_RESOURCES;
+
+	if (MmIsSystemAddressAccessable (Address) == FALSE)
+	{
+		return STATUS_ACCESS_VIOLATION;
+	}
+
+	KIRQL Irql = KeGetCurrentIrql();
+
+	KdPrint(("Adding breakpoint (%X) at irql %x\n", Address, Irql));
+
+	if (Irql < DISPATCH_LEVEL)
+		KfRaiseIrql (DISPATCH_LEVEL);
+
+	KeAcquireSpinLockAtDpcLevel (&DbgCcLock);
+
+	*Number = -1;
+
+	for (ULONG i=0; i<MAX_BREAKPOINTS; i++)
+	{
+		if (DbgCcBreakpoints[i].Free == TRUE)
+		{
+			DbgCcBreakpoints[i].Free = FALSE;
+			DbgCcBreakpoints[i].Address = Address;
+			DbgCcBreakpoints[i].OldByte = *(UCHAR*)Address;
+			*(UCHAR*)Address = 0xCC;
+			Status = STATUS_SUCCESS;
+			*Number = i;
+			KdPrint(("Added breakpoint #%x, oldbyte %x\n", i, DbgCcBreakpoints[i].OldByte));
+			break;
+		}
+	}
+
+	KeReleaseSpinLockFromDpcLevel (&DbgCcLock);
+
+	if (Irql < DISPATCH_LEVEL)
+		KfLowerIrql (Irql);
+
+	return Status;
+}
+
+VOID
+DbgDelCcBreakpoint(
+	ULONG i
+	)
+{
+	KIRQL Irql = KeGetCurrentIrql();
+
+	KdPrint(("Deleting breakpoint #%x at irql %x\n", i, Irql));
+
+	if (Irql < DISPATCH_LEVEL)
+		KfRaiseIrql (DISPATCH_LEVEL);
+
+	KeAcquireSpinLockAtDpcLevel (&DbgCcLock);
+
+	if (DbgCcBreakpoints[i].Free == FALSE)
+	{
+		ASSERT (MmIsSystemAddressAccessable (DbgCcBreakpoints[i].Address) == TRUE);
+		*(UCHAR*)DbgCcBreakpoints[i].Address = DbgCcBreakpoints[i].OldByte;
+		DbgCcBreakpoints[i].Free = TRUE;
+	}
+
+	KeReleaseSpinLockFromDpcLevel (&DbgCcLock);
+
+	if (Irql < DISPATCH_LEVEL)
+		KfLowerIrql (Irql);
+}
 
 
 PVOID 
@@ -75,6 +190,9 @@ Environment
 	return MmGetSystemRoutineAddress (&uName);
 }
 
+LONG DbgCanUnloadNow = 0;
+
+__declspec(naked)
 VOID 
 DbgDispatchInterrupt(
 	)
@@ -122,10 +240,31 @@ Environment
 --*/
 					
 {
+	__asm
+	{
+		pushad
+	}
+
+	InterlockedIncrement (&DbgCanUnloadNow);
 	if (DbgEnteredDebugger == FALSE)
 	{
+		__asm
+		{
+			popad
+		}
+
 		KiDispatchInterrupt ();		
 	}
+	else
+	{
+		__asm
+		{
+			popad
+		}
+	}
+	InterlockedDecrement (&DbgCanUnloadNow);
+
+	__asm ret
 }
 
 //
@@ -134,7 +273,36 @@ Environment
 
 VOID DbgUnhookHalImports()
 {
+	KdPrint(("DbgUnhookHalImports: [%x] = %x, KI %x\n",
+		ppKiDispatchInterrupt,
+		*ppKiDispatchInterrupt,
+		KiDispatchInterrupt
+		));
+
 	*ppKiDispatchInterrupt = KiDispatchInterrupt;
+
+	KdPrint(("DbgUnhookHalImports: [%x] = %x\n",
+		ppKiDispatchInterrupt,
+		*ppKiDispatchInterrupt
+		));
+
+	KdPrint(("Waiting for unload\n"));
+
+//	while (InterlockedCompareExchange (&DbgCanUnloadNow,
+//		0, 
+//		0) == 0)
+	for (;;)
+	{
+		LONG t = DbgCanUnloadNow;
+		if (t == 0)
+			break;
+
+		KdPrint(("[t=%d]", t));
+
+		KeStallExecutionProcessor (100);
+	}
+
+	KdPrint(("\nOkay to unload\n"));
 }
 
 NTSTATUS DbgHookHalImports()
@@ -170,7 +338,21 @@ NTSTATUS DbgHookHalImports()
 			ppKiDispatchInterrupt = (PVOID*) &Iat[i];
 			*(ULONG*)&KiDispatchInterrupt = Iat[i];
 
+			__asm
+			{
+				mov eax, cr0
+				push eax
+				and eax, 0xFFFEFFFF
+				mov cr0, eax
+			}
+
 			Iat[i] = (ULONG) DbgDispatchInterrupt;
+
+			__asm 
+			{
+				pop eax
+				mov cr0, eax
+			}
 
 			KdPrint(("KiDispatchInterrupt hooked\n"));
 
@@ -205,6 +387,7 @@ BOOLEAN
     IN BOOLEAN SecondChance
     );
 
+extern ULONG MinorVersion;
 
 BOOLEAN
 DbgHookKiDebugRoutine(
@@ -231,46 +414,115 @@ Return Value
 	PVOID KdDisableDebugger = GetKernelAddress (L"KdDisableDebugger");
 	PVOID KdDebuggerEnabled = GetKernelAddress (L"KdDebuggerEnabled");
 
+	// On Windows XP KdDisableDebugger performs all work
+	PVOID KdDisableDebuggerWorker = KdDisableDebugger;
+
+	// KdDisableDebugger in XP ends with C3 (RETN)
+	UCHAR RetOpCode = 0xC3;
+	
+	if (MinorVersion == 2)
+	{
+		// On Windows 2003 Server KdDisableDebugger simply calls 
+		// KdDisableDebuggerWithLock
+		// On Windows XP KdDisableDebugger performs all work.
+		// So, on 2003 we should get address of KdDisableDebuggerWithLock;
+
+		KdPrint(("DBG: Making corrections for 2003 server\n"));
+
+		RetOpCode = 0xC2; // KdDisableDebuggerWithLock on 2003 ends with RETN 4
+
+		PVOID KdDisableDebuggerWithLock = NULL;
+
+		for	(UCHAR *p = (UCHAR*)KdDisableDebugger;
+			 *p != 0xC3; // retn
+			 p += size_of_code (p))
+		{
+			if (p[0] == 0xE8) // CALL KdDisableDebuggerWithLock
+			{
+				// destination           = address of call +    offset
+				KdDisableDebuggerWithLock = (PUCHAR)&p[5] + *(ULONG*)&p[1];
+				KdPrint(("DBG: Found KdDisableDebuggerWithLock at %X\n", KdDisableDebuggerWithLock));
+
+				KdDisableDebuggerWorker = KdDisableDebuggerWithLock;
+				goto _search;
+			}
+		}
+
+		KdPrint(("DBG: Call KdDisableDebuggerWithLock NOT found!\n"));
+		return FALSE;
+	}
+
+_search:
 	UCHAR *prev = NULL;
 
-	for (UCHAR *p = (UCHAR*)KdDisableDebugger;
-		*p != 0xC3; // retn
+	for (UCHAR *p = (UCHAR*)KdDisableDebuggerWorker;
+		*p != RetOpCode; // retn
 		p += size_of_code (p))
 	{
 		//
 		// Search for
-		// mov byte ptr [KdDebuggerEnabled], 0
+		//
+		// and byte ptr [KdDebuggerEnabled], 0		// win xp sp1 (mov KiDebugRoutine,XXX is the NEXT)
+		//  or
+		// mov byte ptr [KdDebuggerEnabled], 0		// win xp sp2 (mov KiDebugRoutine,XXX is the PREVIOUS)
+		//  or
+		// mov byte ptr [KdDebuggerEnabled], bl		// win 2003 (mov KiDebugRoutine,XXX is the PREVIOUS)
 		//
 
-		if (p[0] == 0xC6 &&
-			p[1] == 0x05 &&
+		if( p[0] == 0x80 &&
+			p[1] == 0x25 &&
 			*(PVOID*)&p[2] == KdDebuggerEnabled &&
-			p[6] == 0)
+			p[6] == 0
+			)
 		{
-			KdPrint(("Found MOV BYTE PTR [KdDebuggerEnabled],0 at %X\n", p));
-			KdPrint(("Previous instruction at %X\n", prev));
+			// Windows XP SP1 instruction:
+			// and byte ptr [KdDebuggerEnabled], 0
+			prev = p + size_of_code (p); // mov KiDebugRoutine,XXX is the NEXT
+			goto _found;
+		}
+
+		if (
+			// Windows XP instruction (mov [], 0)
+			(MinorVersion == 1 &&
+			 p[0] == 0xC6 &&
+			 p[1] == 0x05 &&
+			 *(PVOID*)&p[2] == KdDebuggerEnabled &&
+			 p[6] == 0) 
+			||
+			// For windows 2003 (mov [], bl)
+			(MinorVersion == 2 &&
+			 p[0] == 0x88 &&
+			 p[1] == 0x1d &&
+			 *(PVOID*)&p[2] == KdDebuggerEnabled)
+			)
+		{
+
+_found:
+			KdPrint(("DBG: Found MOV BYTE PTR [KdDebuggerEnabled],0 at %X\n", p));
+			KdPrint(("DBG: Previous instruction at %X\n", prev));
 
 			if (prev[0] == 0xC7 &&
 				prev[1] == 0x05)
 			{
-				KdPrint(("Previous is MOV DWORD PTR [mem32], imm32\n"));
+				KdPrint(("DBG: Previous is MOV DWORD PTR [mem32], imm32\n"));
 
 				KiDebugRoutine = *(PVOID**)&prev[2];
 
-				KdPrint(("KiDebugRoutine is %X\n", KiDebugRoutine));
+				KdPrint(("DBG: KiDebugRoutine is %X\n", KiDebugRoutine));
 
 				*(PVOID*)&KdpTrapOrStub = *KiDebugRoutine;
 				*KiDebugRoutine = DbgTrap;
 
-				KdPrint(("KiDebugRoutine hooked, KdpTrapOrStub = %X\n", KdpTrapOrStub));
+				KdPrint(("DBG: KiDebugRoutine hooked, KdpTrapOrStub = %X\n", KdpTrapOrStub));
 				return TRUE;
 			}
 		}
 
+		// save pointer to previous instruction
 		prev = p;
 	}
 
-	KdPrint(("KiDebugRoutine NOT hooked!\n"));
+	KdPrint(("DBG: KiDebugRoutine NOT hooked!\n"));
 
 	return FALSE;
 }
@@ -322,6 +574,31 @@ DbgIntBreak(
 
 //UCHAR DbVector = 3;
 UCHAR DbVector = 0xF3;
+#endif
+
+#if 0
+BOOLEAN 
+(*KeFreezeExecution) (
+    IN PVOID TrapFrame,
+    IN PVOID ExceptionFrame
+    );
+
+VOID
+(*KeThawExecution) (
+    IN BOOLEAN Enable
+    );
+
+VOID
+DbgFindFreezeThaw(
+	)
+{
+	PIMAGE_NT_HEADERS NtHeaders = (PIMAGE_NT_HEADERS) RtlImageNtHeader (pNtBase);
+	PIMAGE_SECTION_HEADER Sections = (PIMAGE_SECTION_HEADER) NULL;
+
+	for (ULONG i=0; i<NtHeaders->FileHeader.NumberOfSections; i++)
+	{
+	}
+}
 #endif
 
 VOID
@@ -392,11 +669,13 @@ Return Value
 	if (!NT_SUCCESS(DbgHookHalImports()))
 	{
 		KdPrint(("Could not hook hal imports\n"));
+		ASSERT (FALSE);
 	}
 
 	if (!DbgHookKiDebugRoutine())
 	{
 		KdPrint(("Could not hook KiDebugRoutine\n"));
+		ASSERT (FALSE);
 	}
 }
 
@@ -422,6 +701,8 @@ Return Value
 --*/
 
 {
+	KdPrint(("DbgCleanup enter [irql %x]\n", KeGetCurrentIrql()));
+
 	if (KiDebugRoutine)
 	{
 		DbgUnhookKiDebugRoutine ();
@@ -431,7 +712,7 @@ Return Value
 		KdPrint(("KiDebugRoutine was not hooked!\n"));
 	}
 
-	if (KiDispatchInterrupt)
+	if (ppKiDispatchInterrupt)
 	{
 		DbgUnhookHalImports();
 	}
@@ -439,6 +720,8 @@ Return Value
 	{
 		KdPrint(("Hal import was not hooked!\n"));
 	}
+
+	KdPrint(("DbgCleanup exit\n"));
 
 #if 0
 	if (DbIntObj)
@@ -772,26 +1055,44 @@ Return Value:
 --*/
 
 {
-	// We cannot use KdPrint because it causes a recursion :(
-//	KdPrint(("DbgTrap! (TRAP %X EXC %X REC %X CTX %X PREV %X CHANCE %X\n",
-//		TrapFrame, ExceptionFrame, ExceptionRecord, ContextRecord, PreviousMode, SecondChance
-//		));
-
-	::TrapFrame = TrapFrame;
-
-	if (ExceptionRecord->ExceptionCode == STATUS_ACCESS_VIOLATION)
+	if (!DbgEnteredDebugger)
 	{
-		NTSTATUS Status;
-		KIRQL Irql;
+		::TrapFrame = TrapFrame;
 
-		KeRaiseIrql (HIGH_LEVEL, &Irql);
+		switch (ExceptionRecord->ExceptionCode)
+		{
+		case STATUS_ACCESS_VIOLATION:
+		case STATUS_SINGLE_STEP:
+		case STATUS_BREAKPOINT:
+			{
+				NTSTATUS Status;
+				KIRQL Irql;
 
-		Status = DbgDispatchException (ExceptionRecord, SecondChance);
+				KeRaiseIrql (HIGH_LEVEL, &Irql);
 
-		KeLowerIrql (Irql);
+				Status = DbgDispatchException (ExceptionRecord, SecondChance);
 
-		return NT_SUCCESS(Status);
+				KeLowerIrql (Irql);
+
+				return NT_SUCCESS(Status);
+			}
+		}
 	}
 
 	return KdpTrapOrStub (TrapFrame, ExceptionFrame, ExceptionRecord, ContextRecord, PreviousMode, SecondChance);
 }
+
+// MP support
+
+VOID
+DbgFreezeProcessors(
+	)
+{
+}
+
+VOID
+DbgThawProcessors(
+	)
+{
+}
+

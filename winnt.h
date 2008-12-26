@@ -413,7 +413,7 @@ typedef IMAGE_THUNK_DATA * PIMAGE_THUNK_DATA;
 
 extern "C"
 {
-// nt unexported symbol
+// nt unexported symbols
 PVOID
 RtlImageDirectoryEntryToData (
     IN PVOID Base,
@@ -421,7 +421,6 @@ RtlImageDirectoryEntryToData (
     IN USHORT DirectoryEntry,
     OUT PULONG Size
     );
-
 
 // winstb
 PVOID __base();
@@ -447,6 +446,7 @@ RtlFindImageProcedureByNameOrPointer(
 	IN PCHAR FunctionName OPTIONAL,
 	IN PVOID FunctionEntry OPTIONAL
 	);
+
 
 #endif
 

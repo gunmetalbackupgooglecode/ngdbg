@@ -346,10 +346,6 @@
 			>
 		</File>
 		<File
-			RelativePath="H:\Program Files\Microsoft Visual Studio\VC98\Include\ntddk\ddk\ntddk.h"
-			>
-		</File>
-		<File
 			RelativePath=".\splice.cpp"
 			>
 		</File>
@@ -379,6 +375,10 @@
 		</File>
 		<File
 			RelativePath=".\winddi.h"
+			>
+		</File>
+		<File
+			RelativePath=".\winnt.h"
 			>
 		</File>
 		<File
