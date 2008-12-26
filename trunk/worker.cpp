@@ -84,41 +84,44 @@ BOOL (APIENTRY *xxxDrvCopyBits)(
 // it conflicts with windows.h, which is necessary
 //  for win32k routines :(
 //
+/*
+namespace NT
+{
+extern "C"
+{
+#pragma warning(push)
+#pragma warning(disable: 4005)
+#include <ntddk.h>
+#undef ExFreePool
+#pragma warning(pop)
+}
+}
+*/
 
 extern "C"
 {
 UCHAR __fastcall KfRaiseIrql (UCHAR Irql);
 VOID __fastcall KfLowerIrql (UCHAR Irql);
+UCHAR __stdcall KeGetCurrentIrql ();
 }
 
 //
 // Debugger global vars
 //
 
-// Drawing surface, it's handle, it's MDL
-SURFOBJ* pGDISurf;
-HBITMAP hBitmap;
-PMDL SurfMdl;
-//PVOID pBitmap;
-//ULONG_PTR idMappedBitmap;
+SIZE MousePointerSize = {2,2};
 
-// Backup surface where the part of the screen being 
-//  overwritten is saved
-HBITMAP hBackupBitmap;
-SURFOBJ* pBackupSurface;
-PMDL BackupMdl;
-
-// We don't need it now...
-//HBITMAP hFillBitmap;
-//SURFOBJ *pFillSurface;
-//PMDL FillMdl;
+extern LONG MouseX;
+extern LONG MouseY;
+extern LONG OldMouseX;
+extern LONG OldMouseY;
 
 //
 // Parameters of main debugger 'window'
 //
 
 ULONG Width = 900;			// width
-ULONG Height = 600;			// height
+ULONG Height = 500;			// height
 ULONG StartX = 100;			// x coordinate
 ULONG StartY = 100;			// y coordinate
 ULONG SpareX = 10;			// reserved vertical space
@@ -135,18 +138,6 @@ ULONG SpareY = 10;			// reserved horizontal space
 
 //XLATEOBJ XlateObj;
 
-// We don't need it now..
-/*
-#pragma pack (push,2)
-typedef struct tagBITMAPFILEHEADER {
-        USHORT    bfType;
-        ULONG   bfSize;
-        USHORT    bfReserved1;
-        USHORT    bfReserved2;
-        ULONG   bfOffBits;
-} BITMAPFILEHEADER, *PBITMAPFILEHEADER;
-#pragma pack (pop)
-*/
 
 //
 // Declare vars as 'extern "C"'.
@@ -206,6 +197,164 @@ typedef struct _SYMINFO
 	char SymName[1];
 } SYMINFO, *PSYMINFO;
 
+typedef struct SURFACE
+{
+	HBITMAP hBitmap;
+	SURFOBJ* pSurface;
+	PMDL pMdl;
+} *PSURFACE;
+
+VOID DeleteSurface (SURFACE* Surf)
+{
+	if (Surf->pMdl)
+		UnlockMem (Surf->pMdl);
+	if (Surf->pSurface)
+		EngUnlockSurface (Surf->pSurface);
+	if (Surf->hBitmap)
+		EngDeleteSurface ((HSURF)Surf->hBitmap);
+	ExFreePool (Surf);
+}
+
+SURFACE* CreateSurface (SIZE SurfaceSize, PVOID pvBits, ULONG iFormat)
+{
+	SURFACE *Surf = (SURFACE*) ExAllocatePoolWithTag (NonPagedPool, sizeof(SURFACE), ' kdD');
+	BOOLEAN bOk = FALSE;
+	if (Surf)
+	{
+		memset (Surf, 0, sizeof(SURFACE));
+
+		Surf->hBitmap = EngCreateBitmap (
+			SurfaceSize,
+			SurfaceSize.cx * 4,
+			iFormat,
+			0,
+			pvBits
+			);
+
+		if (Surf->hBitmap)
+		{
+			Surf->pSurface = EngLockSurface ((HSURF)Surf->hBitmap);
+			if (Surf->pSurface)
+			{
+				if (pvBits == NULL)
+				{
+					Surf->pMdl = LockMem (Surf->pSurface->pvBits, Surf->pSurface->cjBits);
+					if (Surf->pMdl)
+						bOk = TRUE;
+				}
+				else
+				{
+					bOk = TRUE;
+				}
+			}
+		}
+	}
+
+	if (Surf && !bOk)
+		DeleteSurface (Surf);
+
+	return Surf;
+}
+
+SURFACE *GDISurf;
+SURFACE *BackupSurf;
+SURFACE *MouseSurf;
+SURFACE *MouseBackupSurf;
+
+BOOL
+MouStoreCursor(
+	)
+{
+	RECTL Rect;
+	POINTL Point;
+	BOOL st;
+
+	// Source point
+	Point.x = 0;
+	Point.y = 0;
+
+	// Destination rectangle
+	Rect.left = MouseX;
+	Rect.right = MouseX + MousePointerSize.cx;
+	Rect.top = MouseY;
+	Rect.bottom = MouseY + MousePointerSize.cy;
+
+	//
+	// Draw cursor
+	//
+
+	//KdPrint(("Drawing cursor (%d,%d,%d,%d)\n", Rect));
+
+	st = EngCopyBits (
+		GDISurf->pSurface,
+		MouseSurf->pSurface,
+		NULL,
+		NULL,
+		&Rect,
+		&Point
+		);
+
+	return st;
+}
+
+BOOL
+MouRedrawCursor(
+	)
+{
+	RECTL Rect;
+	POINTL Point;
+	BOOL st;
+
+	// Source point
+	Point.x = 0;
+	Point.y = 0;
+
+	// Destination rectangle
+	Rect.left = OldMouseX;
+	Rect.right = OldMouseX + MousePointerSize.cx - 1;
+	Rect.top = OldMouseY;
+	Rect.bottom = OldMouseY + MousePointerSize.cy - 1;
+
+	//
+	// Rectore image at old pointer
+	//
+
+	st = xxxDrvCopyBits (
+		GDISurf->pSurface,
+		MouseBackupSurf->pSurface,
+		NULL,
+		NULL,
+		&Rect,
+		&Point
+		);
+
+	// Source point
+	Point.x = MouseX;
+	Point.y = MouseY;
+
+	// Destination rectangle
+	Rect.left = 0;
+	Rect.right = MousePointerSize.cx - 1;
+	Rect.top = 0;
+	Rect.bottom = MousePointerSize.cy - 1;
+
+	//
+	// Backup image
+	//
+
+	st = xxxDrvCopyBits (
+		MouseBackupSurf->pSurface,
+		GDISurf->pSurface,
+		NULL,
+		NULL,
+		&Rect,
+		&Point
+		);
+
+	st = MouStoreCursor ();
+
+	return st;
+}
 
 VOID 
 Worker(
@@ -245,106 +394,37 @@ Environment
 	KdPrint(("Size X %d Y %d\n", Surf->sizlBitmap.cx, Surf->sizlBitmap.cy));
 
 	//
-	// Initialize
+	// Create surfaces
 	//
 
-	/*
-	pBitmap = EngMapFile (L"\\??\\C:\\sample.bmp", 0, &idMappedBitmap);
-
-	KdPrint(("EngLoadModule = %X, idMappedBitmap = %X\n", pBitmap, idMappedBitmap));
-	if (!pBitmap)
-		return;
-
-	PBITMAPFILEHEADER hdr = (PBITMAPFILEHEADER) pBitmap;
-	PVOID pvBits = (PUCHAR)pBitmap + hdr->bfOffBits;
-	
-	KdPrint(("Loaded bitmap\nHeader:\n"
-		"bfType = %c%c\n"
-		"bfSize = %d\n"
-		"bfOffBits = %d\n"
-		"Pointer pvBits = %X\n"
-		"First pixel is %X\n"
-		,
-		hdr->bfType >> 8, hdr->bfType & 0xFF,
-		hdr->bfSize,
-		hdr->bfOffBits,
-		pvBits,
-		*(ULONG*)pvBits
-		));
-	*/
-
-	//
-	// Initialize main drawing surface
-	//
-
-
-	// Create bitmap for drawing
 	SIZEL Size;
 
 	Size.cx = Width;
 	Size.cy = Height;
 
-	hBitmap = EngCreateBitmap (
-		Size, 
-		Size.cx * 4, 
-		BMF_32BPP,
-		0,
-		NULL //pvBits 
-		);
-
-	KdPrint(("EngCreateBitmap (image) = %X\n", hBitmap));
-	if (!hBitmap)
+	// GDI surface
+	GDISurf = CreateSurface (Size, NULL, Surf->iBitmapFormat);
+	KdPrint(("GDISurf %X\n", GDISurf));
+	if (!GDISurf)
 		return;
 
-	//
-	// Initialize backup surface
-	//
-
-	hBackupBitmap = EngCreateBitmap(
-		Size, 
-		Size.cx * 4,
-		Surf->iBitmapFormat,
-		0,
-		NULL
-		);
-
-	KdPrint(("EngCreateBitmap (backup) = %X\n", hBitmap));
-	if (!hBackupBitmap)
+	// Backup surface
+	BackupSurf = CreateSurface (Size, NULL, Surf->iBitmapFormat);
+	KdPrint(("BackupSurf %X\n", BackupSurf));
+	if (!BackupSurf)
 		return;
 
-	/*
-	hFillBitmap = EngCreateBitmap(
-		Size, 
-		Size.cx * 4,
-		Surf->iBitmapFormat,
-		0,
-		NULL
-		);
-
-	KdPrint(("EngCreateBitmap (fill) = %X\n", hFillBitmap));
-	if (!hFillBitmap)
+	// Mouse pointer surface
+	MouseSurf = CreateSurface (MousePointerSize, NULL, Surf->iBitmapFormat);
+	KdPrint(("MouseSurf %X\n", MouseSurf));
+	if (!MouseSurf)
 		return;
-	*/
 
-	//
-	// Lock main drawing surface
-	//
-
-	// Lock bitmap to SURFOBJ
-	pGDISurf = EngLockSurface ((HSURF)hBitmap);
-	KdPrint(("EngLockSurface (image) = %X\n", pGDISurf));
-
-	//
-	// Lock backup surface
-	//
-
-	pBackupSurface = EngLockSurface ((HSURF)hBackupBitmap);
-	KdPrint(("EngLockSurface (backup) = %X\n", pBackupSurface));
-
-	/*
-	pFillSurface = EngLockSurface ((HSURF)hFillBitmap);
-	KdPrint(("EngLockSurface (fill) = %X\n", pFillSurface));
-	*/
+	// Mouse backup surface
+	MouseBackupSurf = CreateSurface (MousePointerSize, NULL, Surf->iBitmapFormat);
+	KdPrint(("MouseBackupSurf %X\n", MouseBackupSurf));
+	if (!MouseBackupSurf)
+		return;
 
 	//
 	// Erase backup surface
@@ -356,24 +436,20 @@ Environment
 	Rect.right = Width;
 	Rect.bottom = Height;
 
-	BOOL s = EngEraseSurface (pBackupSurface, &Rect, RGB(0xFF,0xFF,0xFF));
+	BOOL s = EngEraseSurface (BackupSurf->pSurface, &Rect, RGB(0xFF,0xFF,0xFF));
 	KdPrint(("EngEraseSurface (backup) %d\n", s));
 
 	//
 	// Erase drawing surface
 	//
 
-	s = EngEraseSurface (pGDISurf, &Rect, RGB(0xFF,0xFF,0xFF));
+	s = EngEraseSurface (GDISurf->pSurface, &Rect, RGB(0xFF,0xFF,0xFF));
 	KdPrint(("EngEraseSurface (main) %d\n", s));
 
-	//
-	// Lock all surfaces in memory
-	//
-
-	// lock pages
-	SurfMdl = LockMem (pGDISurf->pvBits, pGDISurf->cjBits);
-	BackupMdl = LockMem (pBackupSurface->pvBits, pBackupSurface->cjBits);
-//	FillMdl = LockMem (pFillSurface->pvBits, pFillSurface->cjBits);
+	Rect.right = MousePointerSize.cx - 1;
+	Rect.bottom = MousePointerSize.cy - 1;
+	s = EngEraseSurface (MouseSurf->pSurface, &Rect, RGB(0,0,0));
+	KdPrint(("EngEraseSurface (mouse) %d\n", s));
 
 	//
 	// Load active font
@@ -542,22 +618,11 @@ Environment
 	KdPrint(( __FUNCTION__ " : unloading symbol tables\n"));
 	SymFreeSymbolTables ();
 
-	KdPrint(( __FUNCTION__ " : unlocking MDLs for surfaces\n"));
-	UnlockMem (SurfMdl);
-	UnlockMem (BackupMdl);
-//	UnlockMem (FillMdl);
-
-	KdPrint(( __FUNCTION__ " : unlocking surfaces\n"));
-//	EngUnlockSurface (pFillSurface);
-	EngUnlockSurface (pBackupSurface);
-	EngUnlockSurface (pGDISurf);
-
 	KdPrint(( __FUNCTION__ " : deleting surfaces\n"));
-//	EngDeleteSurface ((HSURF)hFillBitmap);
-	EngDeleteSurface ((HSURF)hBackupBitmap);
-	EngDeleteSurface ((HSURF)hBitmap);
-
-//	EngUnmapFile (idMappedBitmap);
+	DeleteSurface (MouseBackupSurf);
+	DeleteSurface (MouseSurf);
+	DeleteSurface (BackupSurf);
+	DeleteSurface (GDISurf);
 
 	KdPrint(( __FUNCTION__ " : unloading font\n"));
 	GuiUnloadFont ();
@@ -611,6 +676,10 @@ Environment
 
 	RECTL Rect;
 	POINTL Point;
+	BOOL st;
+
+	// Write cursor to gdi surf
+	st = MouStoreCursor ();
 
 	Point.x = 0;
 	Point.y = 0;
@@ -619,14 +688,16 @@ Environment
 	Rect.right =  StartX + Width;
 	Rect.bottom = StartY + Height;
 
-	return xxxDrvCopyBits(
+	st = xxxDrvCopyBits(
 			pPrimarySurf, 
-			pGDISurf, 
+			GDISurf->pSurface,
 			NULL,
 			NULL, //&XlateObj,		// no translation now
 			&Rect,
 			&Point
 			);
+	
+	return st;
 }
 
 extern "C" extern void _cdecl _snprintf (char*, int, const char*, ...);
@@ -765,8 +836,19 @@ Environment
 	//
 
 	// TODO: redraw cursor
+	MouRedrawCursor ();
 }
 
+extern "C"
+{
+VOID
+DbgFreezeProcessors(
+	);
+
+VOID
+DbgThawProcessors(
+	);
+}
 
 VOID 
 WR_ENTER_DEBUGGER(
@@ -820,6 +902,11 @@ Environment
 	RECTL Rect;
 	POINTL Point = {StartX, StartY};
 
+	KdPrint(("WR_ENTER_DEBUGGER enter%s\n", BootDebuggingInitiated ? "(AT BOOT TIME)" : ""));
+
+	// freeze processors
+	DbgFreezeProcessors ();
+
 	//
 	// don't perform some operations at boot time
 	//
@@ -829,14 +916,17 @@ Environment
 		EngFastAttachProcess (CsrProcess, &State);
 	}
 
-	KdPrint(("WR_ENTER_DEBUGGER enter%s\n", BootDebuggingInitiated ? "(AT BOOT TIME)" : ""));
-
 	DbgEnteredDebugger = TRUE;
+	UCHAR Irql = KeGetCurrentIrql();
+	KfLowerIrql (1);
+	KdPrint(("IRQL lowered!!\n"));
+	//KeStallExecutionProcessor (3000000);
+	//KdPrint(("ok\n"));
 
 	if (BootDebuggingInitiated == FALSE)
 	{
 		KdPrint(("Surf->pvBits = %X\n", pPrimarySurf->pvBits));
-		KdPrint(("pGDISurf->pvBits = %X\n", pGDISurf->pvBits));
+		KdPrint(("pGDISurf(%X)->pvBits = %X\n", GDISurf->pSurface, GDISurf->pSurface->pvBits));
 
 		KdPrint(("Backing up..\n"));
 
@@ -846,7 +936,7 @@ Environment
 		Rect.bottom = Height;
 
 		s = xxxDrvCopyBits (
-			pBackupSurface,
+			BackupSurf->pSurface,
 			pPrimarySurf,
 			NULL,
 			NULL,
@@ -862,7 +952,7 @@ Environment
 	//
 
 	KbdSetLeds (DbgNum, DbgCaps, 1);
-	
+
 	//
 	// We are within kernel debugger.
 	// Callback the specified routine
@@ -876,6 +966,20 @@ Environment
 	GuiTextOut ("> ");
 
 	DisplayBuffer();
+
+	/*
+	//DEBUG
+	{
+		PVOID ptr = ExAllocatePoolWithTag (PagedPool, 0x10000, ' kdD');
+		KdPrint(("ptr = %x\n", ptr));
+
+		*(ULONG*)ptr = 0x11111111;
+
+		KdPrint(("ok\n"));
+		ExFreePool (ptr);
+	}
+	//DEBUG
+	*/
 
 	//
 	// Directly wait on keyboard at VERY HIGH IRQL !!!
@@ -996,7 +1100,7 @@ Environment
 
 		s = xxxDrvCopyBits(
 				pPrimarySurf, 
-				pBackupSurface, 
+				BackupSurf->pSurface, 
 				NULL,
 				NULL,
 				&Rect,
@@ -1006,6 +1110,10 @@ Environment
 
 	KdPrint(("WR_ENTER_DEBUGGER exit\n"));
 
+	DbgThawProcessors();
+
+	KfRaiseIrql (Irql);
+	KdPrint(("IRQL raised!!\n"));
 	DbgEnteredDebugger = FALSE;
 
 	if (BootDebuggingInitiated == FALSE)

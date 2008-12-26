@@ -114,6 +114,18 @@ VOID
 extern BOOLEAN I3HereUser;
 extern BOOLEAN I3HereKernel;
 
+VOID
+DbgFreezeProcessors(
+	);
+
+VOID
+DbgThawProcessors(
+	);
+
+extern "C" extern PVOID pNtBase;
+
+#define MAX_BREAKPOINTS 128
+
 }
 
 

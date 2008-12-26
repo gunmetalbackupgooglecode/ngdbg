@@ -76,7 +76,7 @@ Environment
 	return Byte;
 }
 
-#if DBG
+#if DBG && 0
 VOID
 MouDumpPacket (
 	PMOUSE_PACKET Packet
@@ -133,6 +133,9 @@ LONG MouseX = 0;
 LONG MouseY = 0;
 LONG MouseWheel = 0;
 
+LONG OldMouseX = 0;
+LONG OldMouseY = 0;
+
 BOOLEAN Resynch = FALSE;
 
 #include "mouse.h"
@@ -156,6 +159,9 @@ ReportMouseStateChange(
 	CHAR ShiftX = (CHAR) Packet.XMovement;
 	CHAR ShiftY = (CHAR) Packet.YMovement;
 	CHAR ShiftZ = (CHAR) Packet.ZMovement;
+
+	OldMouseX = MouseX;
+	OldMouseY = MouseY;
 
 	if (Packet.u1.e1.XSign)
 	{

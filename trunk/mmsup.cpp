@@ -238,6 +238,29 @@ Return value
 	return TRUE;
 }
 
+#if 0
+extern "C" extern ULONG KiBugCheckData;
+
+VOID MmAllowPageFaultsAtRaisedIrql ()
+/**
+	Allow page faults at raised IRQL
+*/
+{
+	//
+	// KiTrap0E performs check if KiBugCheckData == 0.
+	// If so, KiTrap0E calls KeBugCheckEx(IRQL_NOT_LESS_OR_EQUAL,...)
+	//  if not, it calls MmAccessFault and resolves fault.
+	//
+
+	KiBugCheckData = 0xFFFFFFFF;
+}
+
+VOID MmForbidPageFaultsAtRaisedIrql ()
+{
+	KiBugCheckData = 0;
+}
+#endif
+
 // Irql < DISPATCH_LEVEL
 VOID MmMakeAddressWritable (PVOID VirtualAddress, BOOLEAN Write)
 {

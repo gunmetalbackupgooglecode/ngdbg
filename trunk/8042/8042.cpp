@@ -245,7 +245,8 @@ I8xGetBytePolled(
 			//
 
 			*Byte = I8X_GET_DATA_BYTE ();
-			I8xPrint2(("I8x-" __FUNCTION__ ": ate %X\n", *Byte));
+			//I8xPrint2(("I8x-" __FUNCTION__ ": ate %X\n", *Byte));
+			KdPrint(("I8x-" __FUNCTION__ ": ate %X\n", *Byte));
 
 			if (DeviceType != MouseDevice)
 			{

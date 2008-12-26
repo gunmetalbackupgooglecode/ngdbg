@@ -442,6 +442,8 @@ SymFreeSymbolTables(
 	ExReleaseFastMutex (&SymListLock);
 }
 
+//KSPIN_LOCK SymLock;
+
 NTSTATUS
 SymGlobGetNearestSymbolByAddress(
 	IN PVOID Address,
@@ -450,9 +452,19 @@ SymGlobGetNearestSymbolByAddress(
 	OUT ULONG *Distance
 	)
 {
-	ASSERT (KeGetCurrentIrql() >= DISPATCH_LEVEL);	// no one onws our symbol table
+//	KIRQL Irql;
+//	BOOLEAN LockAcquired = FALSE;
 
-	NTSTATUS Status;
+	/*
+	//ASSERT (KeGetCurrentIrql() >= DISPATCH_LEVEL);	// no one onws our symbol table
+	if (KeGetCurrentIrql() < DISPATCH_LEVEL)
+	{
+		KeAcquireSpinLock (&SymLock, &Irql);
+		LockAcquired = TRUE;
+	}
+	*/
+
+	NTSTATUS Status = STATUS_NOT_FOUND;
 	ULONG MinimumDistance = 0xFFFFFFFF;
 	PSYMINFO MinSymbol = NULL;
 	PMOD_SYM MinModule = NULL;
@@ -483,6 +495,21 @@ SymGlobGetNearestSymbolByAddress(
 		Sym = (PMOD_SYM) Sym->SymListEntry.Flink;
 	}
 
+	if (MinimumDistance > 0x1000)
+	{
+		if (*SymLen < 11)
+		{
+			Status = STATUS_BUFFER_OVERFLOW;
+			goto exit;
+		}
+
+		sprintf (Symbol, "0x%08x", Address);
+		Status = STATUS_SUCCESS;
+		*Distance = 0;
+		*SymLen = 11;
+		goto exit;
+	}
+
 	ULONG len = strlen(MinModule->ModName) + 1 + MinSymbol->NextEntryDelta - FIELD_OFFSET (SYMINFO,SymName);
 	if (*SymLen < len)
 	{
@@ -494,6 +521,7 @@ SymGlobGetNearestSymbolByAddress(
 	strcat (Symbol, "!");
 	strcat (Symbol, MinSymbol->SymName);
 	Symbol[len] = 0;
+	Status = STATUS_SUCCESS;
 
 //	KdPrint(("Found sym %s\n", Symbol));
 
@@ -501,6 +529,14 @@ SymGlobGetNearestSymbolByAddress(
 	*Distance = MinimumDistance;
 
 exit:
+
+	/*
+	if (LockAcquired)
+	{
+		KeReleaseSpinLock (&SymLock, Irql);
+	}
+	*/
+
 	return Status;
 }
 
@@ -548,7 +584,7 @@ SymGlobGetSymbolByAddress(
 	IN OUT ULONG *SymLen
 	)
 {
-	ASSERT (KeGetCurrentIrql() >= DISPATCH_LEVEL);	// no one onws our symbol table
+//	ASSERT (KeGetCurrentIrql() >= DISPATCH_LEVEL);	// no one onws our symbol table
 
 	NTSTATUS Status;
 
@@ -660,7 +696,7 @@ SymGlobGetSymbolByName(
 	OUT ULONG *SymAddr
 	)
 {
-	ASSERT (KeGetCurrentIrql() >= DISPATCH_LEVEL);	// no one onws our symbol table
+//	ASSERT (KeGetCurrentIrql() >= DISPATCH_LEVEL);	// no one onws our symbol table
 
 	NTSTATUS Status;
 
