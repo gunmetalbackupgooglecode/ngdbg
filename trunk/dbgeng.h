@@ -126,6 +126,14 @@ extern "C" extern PVOID pNtBase;
 
 #define MAX_BREAKPOINTS 128
 
+VOID
+DbgHalInitializeMP(
+	);
+
+VOID
+DbgHalCleanupMP(
+	);
+
 }
 
 

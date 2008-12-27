@@ -144,6 +144,12 @@ void DriverUnload(IN PDRIVER_OBJECT DriverObject)
 	Cleanup();
 	W32ReleaseCall ();
 
+	//
+	// Perform clean-up operations on multiprocessor system
+	//
+
+	DbgHalCleanupMP ();
+
 	DbgCleanup();
 
 	KdPrint(("[~] DriverUnload()\n"));
@@ -219,9 +225,11 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING )
 
 	if (KeNumberProcessors > 1)
 	{
-		KdPrint(("Your number of processors : %d\n", KeNumberProcessors));
-		KdPrint(("Only UP (uniprocessor) machines supported\n"));
-		return STATUS_NOT_SUPPORTED;
+		KdPrint(("Loading on multiprocessor system (NumberProcessors %d)\n", KeNumberProcessors));
+	}
+	else
+	{
+		KdPrint(("Loading on uniprocessor system\n"));
 	}
 
 	KdPrint (("First hello from nt\n"));
@@ -397,6 +405,8 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING )
 		pPrimarySurf = disp->pPrimarySurf;
 	}
 
+	// Hook kbd & mouse
+
 #if KBD_HOOK_ISR
 	OldKbd = GetIOAPICIntVector (1);
 	*(PVOID*)&OldISR = IoHookInterrupt ( (UCHAR)OldKbd, InterruptService);
@@ -407,9 +417,16 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING )
 
 	MouseInitialize (StateChangeCallbackRoutine);
 
-	KdPrint(("Keyboard hooked\n"));
+	KdPrint(("Keyboard & mouse hooked\n"));
 
+	// Initialize reset DPC
 	KeInitializeDpc (&HotkeyResetStateDpc, HotkeyResetStateDeferredRoutine, NULL);
+
+	//
+	// Perform multiprocessor initialization
+	//
+
+	DbgHalInitializeMP ();
 
 	///
 
@@ -501,6 +518,12 @@ Environment
 	BootGuiInitialize ();
 
 	//
+	// Perform multiprocessor initialization
+	//
+
+	DbgHalInitializeMP ();
+
+	//
 	// Load symbols (usually Worker() loads symbols, which is not called at boot time)
 	//
 
@@ -557,6 +580,9 @@ BootCleanUp(
 	)
 {
 	KdPrint (( __FUNCTION__ " : Not implemented\n"));
+
+	DbgHalCleanupMP ();
+
 	ASSERT (FALSE);
 }
 

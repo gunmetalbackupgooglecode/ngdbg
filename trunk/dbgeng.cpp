@@ -1081,18 +1081,3 @@ Return Value:
 
 	return KdpTrapOrStub (TrapFrame, ExceptionFrame, ExceptionRecord, ContextRecord, PreviousMode, SecondChance);
 }
-
-// MP support
-
-VOID
-DbgFreezeProcessors(
-	)
-{
-}
-
-VOID
-DbgThawProcessors(
-	)
-{
-}
-
